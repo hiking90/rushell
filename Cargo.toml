@@ -1,0 +1,21 @@
+[package]
+name = "rushell"
+version = "0.1.0"
+authors = ["Jeff Kim <jeff.kim@windriver.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nix = "0.18.0"
+pest = "2.1.0"
+pest_derive = "2.1.0"
+ansi_term = "0.12"
+linefeed = {path = "../linefeed", version = "0.6.0"}
+dirs = "3"
+failure = "0"
+log = { version = "^0", features = ["max_level_trace", "release_max_level_warn"] }
+structopt = "0"
+phf = { version = "0", features = ["macros"] }
+lazy_static = "1"
+glob = "0"
