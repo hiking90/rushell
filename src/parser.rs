@@ -918,6 +918,13 @@ impl ShellParser {
                     index,
                 }
             }
+            Rule::empty_initializer => {
+                Assignment {
+                    name,
+                    initializer: Initializer::String(Word(Vec::new())),
+                    index,
+                }
+            }
             _ => unreachable!(),
         }
     }
@@ -1361,6 +1368,7 @@ impl ShellParser {
     pub fn parse(&mut self, script: &str) -> Result<Ast, ParseError> {
         match PestShellParser::parse(Rule::script, script) {
             Ok(mut pairs) => {
+                // println!("{:?}", pairs);
                 let terms = self.visit_compound_list(pairs.next().unwrap());
 
                 if terms.is_empty() {

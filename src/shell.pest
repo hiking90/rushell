@@ -108,6 +108,7 @@ literal_in_double_quoted_span = ${
     (
         !("\"" | "\\" | "`" | "$") ~ ANY
         | "\\" ~ ANY
+        | "$" ~ WHITESPACE+ ~ ANY
         | WHITESPACE
     )+
 }
@@ -117,9 +118,10 @@ literal_in_single_quoted_span = ${ ( "\\'"  | !("\'") ~ ANY | WHITESPACE)+ }
 //
 // Assignment
 //
-initializer = { array_initializer | string_initializer }
+initializer = { array_initializer | string_initializer | empty_initializer }
 string_initializer = { word }
 array_initializer = { ("(" ~ word* ~ ")") }
+empty_initializer = { "" }
 
 assignment = { var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
 assignment_command = { assignment+ }
