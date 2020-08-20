@@ -121,9 +121,9 @@ literal_in_single_quoted_span = ${ ( "\\'"  | !("\'") ~ ANY | WHITESPACE)+ }
 initializer = { array_initializer | string_initializer | empty_initializer }
 string_initializer = { word }
 array_initializer = { ("(" ~ word* ~ ")") }
-empty_initializer = { "" }
+empty_initializer = { WHITESPACE* }
 
-assignment = { var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
+assignment = ${ var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
 assignment_command = { assignment+ }
 
 //
