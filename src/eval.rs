@@ -9,6 +9,7 @@ use crate::process::*;
 use crate::shell::Shell;
 use crate::variable::Value;
 use failure::Error;
+use linefeed::Interface;
 use nix;
 use nix::unistd::{close, fork, pipe, setpgid, ForkResult, Pid};
 use std::fs::File;
@@ -16,8 +17,6 @@ use std::io::prelude::*;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
-use linefeed::Interface;
-
 
 type Result<I> = std::result::Result<I, Error>;
 

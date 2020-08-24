@@ -6,8 +6,8 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 extern crate ansi_term;
-extern crate linefeed;
 extern crate dirs;
+extern crate linefeed;
 #[macro_use]
 extern crate log;
 extern crate structopt;
@@ -23,27 +23,25 @@ mod pattern;
 #[macro_use]
 mod macros;
 mod builtins;
-mod utils;
-mod expand;
 mod eval;
-mod variable;
-mod process;
-mod theme;
-mod fuzzy;
+mod expand;
 mod path;
+mod process;
 mod shell;
+mod theme;
+mod utils;
+mod variable;
 
-
-use std::fs;
-use std::io;
-use std::env;
-use std::path::{PathBuf};
+use crate::variable::Value;
 use ansi_term::Color;
 use linefeed::{Interface, ReadResult};
-use crate::variable::Value;
-use nix::unistd;
-use std::os::unix::io::AsRawFd;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
+use nix::unistd;
+use std::env;
+use std::fs;
+use std::io;
+use std::os::unix::io::AsRawFd;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
@@ -81,12 +79,14 @@ fn main() -> io::Result<()> {
     let style = Color::Red.bold();
     // let text = ">> ";
 
-    let conf_dir = homedir.join("/.config/rushell/");
+    let conf_dir = homedir.join(".config/rushell/");
     let history_file = conf_dir.join("history");
 
     if fs::create_dir_all(&conf_dir).is_ok() {
         let _ = interface.load_history(&history_file);
     }
+
+    let mut command_scanner = path::CommandScanner::new();
 
     // The character values '\x01' and '\x02' are used to indicate the beginning
     // and end of an escape sequence. This informs linefeed, which cannot itself
@@ -95,28 +95,53 @@ fn main() -> io::Result<()> {
     // the visible length of the prompt string.
 
     loop {
+        if let Some(path) = env::var_os("PATH") {
+            if let Ok(path) = path.into_string() {
+                if command_scanner.scan(&path) == true {
+                    interface.set_completer(Arc::new(path::ShellCompleter::new(&command_scanner)));
+                    shell.set_commands(command_scanner.commands());
+                }
+            }
+        }
+
         let mut cwd = env::current_dir().expect("Error in current_dir()");
         if let Ok(strip_home) = cwd.strip_prefix(&homedir) {
             cwd = PathBuf::from("~").join(strip_home);
         }
 
-        interface.set_prompt(&format!("\n\x01{prefix}\x02{text}\x01{suffix}\x02\n> ",
-            prefix=style.prefix(),
-            text=cwd.display(),
-            suffix=style.suffix()))?;
+        interface.set_prompt(&format!(
+            "\n\x01{prefix}\x02{text}\x01{suffix}\x02\n> ",
+            prefix = style.prefix(),
+            text = cwd.display(),
+            suffix = style.suffix()
+        ))?;
 
         let readline = interface.read_line()?;
         process::check_background_jobs(&mut shell);
         match readline {
             ReadResult::Input(line) => {
                 shell.run_str(&line);
-                interface.add_history_unique(line);
+                if line.trim().len() != 0 {
+                    interface.add_history_unique(line);
+                }
             }
             _ => break,
         }
 
-        interface.save_history(&history_file);
+        interface.save_history(&history_file).unwrap_or_else(|err| {
+            writeln!(
+                shell,
+                "save_history error: {} {}",
+                history_file.display(),
+                err
+            )
+            .unwrap()
+        });
     }
+
+    drop(shell);
+    drop(interface);
+    drop(command_scanner);
 
     Ok(())
 }

@@ -1,8 +1,8 @@
 use crate::process::ExitStatus;
 use crate::shell::Shell;
 use crate::utils::FdFile;
-use std::io::Write;
 use phf::phf_map;
+use std::io::Write;
 
 mod alias;
 mod bg;

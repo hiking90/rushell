@@ -14,7 +14,9 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         return ExitStatus::ExitedWith(0);
     }
 
-    for arg in ctx.argv {
+    let iter = ctx.argv.iter().skip(1);
+
+    for arg in iter {
         let frags: Vec<&str> = arg.splitn(2, '=').collect();
         let mut iter = frags.iter();
         match (iter.next(), iter.next()) {
@@ -26,8 +28,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             (Some(name), None) => {
                 ctx.shell.export(name);
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 

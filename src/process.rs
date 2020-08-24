@@ -394,8 +394,15 @@ pub fn run_external_command(
     let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") {
         CString::new(argv[0].as_str())?
     } else {
-        match shell.path_table().lookup(&argv[0]) {
-            Some(path) => CString::new(path)?,
+        match shell.commands().get(&argv[0]) {
+            Some(entry) => {
+                if let Some(path) = entry.path().to_str() {
+                    CString::new(path)?
+                } else {
+                    print_err!("Invalid UTF8 character `{}'", argv[0]);
+                    return Ok(ExitStatus::ExitedWith(1));
+                }
+            }
             None => {
                 print_err!("command not found `{}'", argv[0]);
                 return Ok(ExitStatus::ExitedWith(1));
@@ -476,8 +483,7 @@ pub fn run_external_command(
                     unreachable!();
                 }
                 Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
-                    print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.",
-                        argv0);
+                    print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.", argv0);
                     std::process::exit(1);
                 }
                 Err(err) => {

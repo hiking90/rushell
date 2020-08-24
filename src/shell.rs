@@ -1,20 +1,20 @@
 use crate::eval::eval;
+use crate::linefeed::{DefaultTerminal, Interface};
 use crate::parser;
-use crate::path::PathTable;
 use crate::process::{ExitStatus, Job, JobId, ProcessState};
 use crate::variable::{Frame, Value, Variable};
-use crate::linefeed::{Interface, DefaultTerminal};
+use crate::path;
 use nix;
 use nix::sys::termios::{tcgetattr, Termios};
 use nix::unistd::{getpid, Pid};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs::File;
+use std::io;
 use std::io::prelude::*;
 use std::os::unix::io::RawFd;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::io;
-use std::fmt;
 use std::sync::Arc;
 
 /// A isolated shell execution environment.
@@ -28,8 +28,6 @@ pub struct Shell {
     /// A saved terminal state.
     pub shell_termios: Option<Termios>,
 
-    /// `$PATH`
-    path_table: PathTable,
     /// `$?`
     last_status: i32,
     /// `$!`
@@ -66,6 +64,7 @@ pub struct Shell {
     pub last_fore_job: Option<Rc<Job>>,
 
     linefeed: Arc<Interface<DefaultTerminal>>,
+    commands: Arc<path::Commands>,
 }
 
 impl Shell {
@@ -75,7 +74,6 @@ impl Shell {
             script_name: "".to_owned(),
             interactive: false,
             shell_termios: None,
-            path_table: PathTable::new(),
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
@@ -92,6 +90,7 @@ impl Shell {
             last_fore_job: None,
             last_back_job: None,
             linefeed: linefeed,
+            commands: Arc::new(path::Commands::new()),
         }
     }
 
@@ -187,7 +186,7 @@ impl Shell {
         if !is_local && key == "PATH" {
             // $PATH is being updated. Reload directories.
             if let Value::String(ref path) = value {
-                self.path_table.scan(path);
+                // self.path_table().scan(path);
             }
         }
     }
@@ -258,8 +257,12 @@ impl Shell {
         })
     }
 
-    pub fn path_table(&self) -> &PathTable {
-        &self.path_table
+    pub fn set_commands(&mut self, commands: Arc<path::Commands>) {
+        self.commands = commands;
+    }
+
+    pub fn commands(&self) -> Arc<path::Commands> {
+        Arc::clone(&self.commands)
     }
 
     pub fn jobs(&self) -> &HashMap<JobId, Rc<Job>> {

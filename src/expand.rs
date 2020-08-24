@@ -113,8 +113,7 @@ pub fn expand_param(
                     ) => {
                         let content = var.as_str().to_string();
                         let replaced =
-                            replace_pattern(shell, pattern, &content,
-                                replacement, *replace_all)?;
+                            replace_pattern(shell, pattern, &content, replacement, *replace_all)?;
                         return Ok(vec![Some(replaced)]);
                     }
                     (_, _) => {
@@ -174,7 +173,8 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                     let frag = value.unwrap_or_else(|| "".to_owned());
                     frags.push(LiteralOrGlob::Literal(frag));
                 }
-                (frags, !quoted)
+                // (frags, !quoted)
+                (frags, false)
             }
             Span::ArrayParameter {
                 name,
@@ -316,10 +316,7 @@ pub fn expand_words(shell: &mut Shell, words: &[Word]) -> Result<Vec<String>> {
 }
 
 /// Expands and merges all pattern words into a single pattern word.
-pub fn expand_into_single_pattern_word(
-    shell: &mut Shell,
-    pattern: &Word
-) -> Result<PatternWord> {
+pub fn expand_into_single_pattern_word(shell: &mut Shell, pattern: &Word) -> Result<PatternWord> {
     let mut frags = Vec::new();
     let ifs = ""; /* all whitespaces are treated as a literal */
     for word in expand_word_into_vec(shell, pattern, ifs)? {

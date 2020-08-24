@@ -1,8 +1,7 @@
+use ansi_term::Colour;
 use pest::iterators::Pair;
 use pest::Parser;
 use std::os::unix::io::RawFd;
-use ansi_term::Colour;
-use ansi_term::Style;
 
 #[derive(Parser)]
 #[grammar = "shell.pest"]
@@ -918,13 +917,11 @@ impl ShellParser {
                     index,
                 }
             }
-            Rule::empty_initializer => {
-                Assignment {
-                    name,
-                    initializer: Initializer::String(Word(Vec::new())),
-                    index,
-                }
-            }
+            Rule::empty_initializer => Assignment {
+                name,
+                initializer: Initializer::String(Word(Vec::new())),
+                index,
+            },
             _ => unreachable!(),
         }
     }
@@ -1390,7 +1387,9 @@ impl ShellParser {
             }
             println!(
                 "{}: {:?}",
-                Colour::RGB(0xFF, 0, 0xFF).bold().paint(&format!("{:?}", pair.as_rule())),
+                Colour::RGB(0xFF, 0, 0xFF)
+                    .bold()
+                    .paint(&format!("{:?}", pair.as_rule())),
                 pair.as_span().as_str()
             );
 
