@@ -49,6 +49,9 @@ const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/l
 fn main() -> io::Result<()> {
     let interface = Arc::new(Interface::new("rushell")?);
 
+    interface.bind_sequence("\x1b\x1b[D", linefeed::Command::from_str("backward-word"));
+    interface.bind_sequence("\x1b\x1b[C", linefeed::Command::from_str("forward-word"));
+
     let mut shell = shell::Shell::new(interface.clone());
 
     // Import environment variables.
