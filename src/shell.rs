@@ -362,4 +362,8 @@ impl Shell {
     pub fn write_fmt(&self, args: fmt::Arguments) -> io::Result<()> {
         self.linefeed.write_fmt(args)
     }
+
+    pub fn linefeed(&self) -> Arc<Interface<DefaultTerminal>> {
+        Arc::clone(&self.linefeed)
+    }
 }
