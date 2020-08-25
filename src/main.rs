@@ -31,6 +31,7 @@ mod shell;
 mod theme;
 mod utils;
 mod variable;
+mod git;
 
 use crate::variable::Value;
 use ansi_term::Color;
@@ -121,10 +122,11 @@ fn main() -> io::Result<()> {
         }
 
         interface.set_prompt(&format!(
-            "\n\x01{prefix}\x02{text}\x01{suffix}\x02\n> ",
+            "\n\x01{prefix}\x02{text}\x01{suffix}\x02 {git}\n> ",
             prefix = style.prefix(),
             text = cwd.display(),
-            suffix = style.suffix()
+            suffix = style.suffix(),
+            git = git::prompt(),
         ))?;
 
         let readline = interface.read_line()?;
