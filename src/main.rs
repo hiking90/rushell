@@ -47,6 +47,8 @@ use std::sync::Arc;
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn main() -> io::Result<()> {
+    let release = std::env::args().nth(1).unwrap_or("debug".to_string()) == "release";
+
     let interface = Arc::new(Interface::new("rushell")?);
 
     interface.bind_sequence("\x1b\x1b[D", linefeed::Command::from_str("backward-word"));
@@ -79,7 +81,13 @@ fn main() -> io::Result<()> {
     }
 
     let homedir = dirs::home_dir().expect("Cannot read home_dir()");
-    let style = Color::Red.bold();
+    let homedir_str = homedir.to_str().unwrap();
+
+    let style = if release == true {
+        Color::Fixed(87).bold()
+    } else {
+        Color::Red.bold()
+    };
     // let text = ">> ";
 
     let conf_dir = homedir.join(".config/rushell/");
@@ -101,7 +109,7 @@ fn main() -> io::Result<()> {
         if let Some(path) = env::var_os("PATH") {
             if let Ok(path) = path.into_string() {
                 if command_scanner.scan(&path) == true {
-                    interface.set_completer(Arc::new(path::ShellCompleter::new(&command_scanner)));
+                    interface.set_completer(Arc::new(path::ShellCompleter::new(&command_scanner, homedir_str)));
                     shell.set_commands(command_scanner.commands());
                 }
             }

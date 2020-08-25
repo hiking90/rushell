@@ -1,6 +1,5 @@
 use linefeed::complete;
 use crate::builtins::INTERNAL_COMMANDS;
-
 use linefeed::complete::{Completer, Suffix};
 use linefeed::prompter::Prompter;
 use linefeed::terminal::Terminal;
@@ -122,12 +121,14 @@ impl CommandScanner {
 
 pub struct ShellCompleter {
     commands: Arc<HashMap<String, Arc<fs::DirEntry>>>,
+    homedir: String,
 }
 
 impl ShellCompleter {
-    pub fn new(scanner: &CommandScanner) -> ShellCompleter {
+    pub fn new(scanner: &CommandScanner, homedir: &str) -> ShellCompleter {
         ShellCompleter {
             commands: scanner.commands(),
+            homedir: homedir.to_owned(),
         }
     }
 
@@ -142,7 +143,8 @@ impl ShellCompleter {
         }
 
         for key in self.commands.keys() {
-            if key.starts_with(&command) && INTERNAL_COMMANDS.get(command.as_str()).is_none() == true {
+            if key.starts_with(&command) &&
+                INTERNAL_COMMANDS.get(command.as_str()).is_none() == true {
                 res.push(linefeed::Completion {
                     completion: format!("{}{}", prefix, key),
                     display: Some(key.to_owned()),
@@ -169,8 +171,8 @@ impl<Term: Terminal> Completer<Term> for ShellCompleter {
     fn complete(
         &self,
         word: &str,
-        _reader: &Prompter<Term>,
-        _start: usize,
+        reader: &Prompter<Term>,
+        start: usize,
         _end: usize,
     ) -> Option<Vec<linefeed::Completion>> {
         // println!("{}, {} : {}", word, _start, _reader.buffer());
@@ -178,15 +180,36 @@ impl<Term: Terminal> Completer<Term> for ShellCompleter {
             return Some(self.complete_command(word));
         }
 
-        let mut input = String::from(_reader.buffer());
-        input.truncate(_start);
+        let mut input = String::from(reader.buffer());
+        input.truncate(start);
         let input = input.trim();
 
         if input.is_empty() || input.ends_with("&") || input.ends_with("|") ||
             input.ends_with(";") || input.ends_with("`") {
             Some(self.complete_command(word))
         } else {
-            Some(complete::complete_path(word))
+            let mut word = word.to_owned();
+            let tilde = word.starts_with("~");
+
+            if tilde == true {
+                word.replace_range(..1, &self.homedir);
+            }
+
+            // let mut res = complete_path(&word, &self.homedir);
+            let mut res = complete::complete_path(&word);
+
+            if tilde == true {
+                for c in res.iter_mut() {
+                    if c.completion.starts_with(&self.homedir) {
+                        let mut completion = c.completion.to_owned();
+                        completion.replace_range(..self.homedir.len(), "~");
+                        c.completion = completion;
+                        c.display = None;
+                    }
+                }
+            }
+
+            Some(res)
         }
     }
 
