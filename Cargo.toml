@@ -11,7 +11,7 @@ nix = "0.18.0"
 pest = "2.1.0"
 pest_derive = "2.1.0"
 ansi_term = "0.12"
-#linefeed = {path = "../linefeed", version = "0.6.0"}
+# linefeed = {path = "../linefeed", version = "0.6.0"}
 linefeed = {version = "0.6.0", git = "https://github.com/hiking90/linefeed"}
 dirs = "3"
 failure = "0"

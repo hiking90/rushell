@@ -86,6 +86,10 @@ fn main() -> io::Result<()> {
         shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
     }
 
+    #[cfg(target_os = "linux")]
+    shell.run_str("alias ls=\"ls --color\"");
+
+    #[cfg(target_os = "macos")]
     shell.run_str("alias ls=\"ls -Gp\"");
 
     let stdout = std::fs::File::create("/dev/stdout").unwrap();
