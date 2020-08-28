@@ -325,6 +325,7 @@ checksum = "a2f02823cf78b754822df5f7f268fb59822e7296276d3e069d8e8cb26a14bd10"
 [[package]]
 name = "linefeed"
 version = "0.6.0"
+source = "git+https://github.com/hiking90/linefeed#46a21eb225812975514f0fa73112ae82c1d74b42"
 dependencies = [
  "dirs 1.0.5",
  "mortal",

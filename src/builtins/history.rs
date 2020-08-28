@@ -6,7 +6,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     let writer = match linefeed.lock_writer_erase() {
         Ok(writer) => writer,
         Err(err) => {
-            write!(ctx.shell, "{}", err);
+            write!(ctx.shell, "{}", err).unwrap();
             return ExitStatus::ExitedWith(255);
         }
     };

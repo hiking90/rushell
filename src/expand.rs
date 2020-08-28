@@ -167,7 +167,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 unreachable!()
             }
             Span::Literal(s) => (vec![LiteralOrGlob::Literal(s.clone())], false),
-            Span::Parameter { name, op, quoted } => {
+            Span::Parameter { name, op, quoted: _ } => {
                 let mut frags = Vec::new();
                 for value in expand_param(shell, name, op)? {
                     let frag = value.unwrap_or_else(|| "".to_owned());

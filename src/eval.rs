@@ -9,14 +9,12 @@ use crate::process::*;
 use crate::shell::Shell;
 use crate::variable::Value;
 use failure::Error;
-use linefeed::Interface;
 use nix;
 use nix::unistd::{close, fork, pipe, setpgid, ForkResult, Pid};
 use std::fs::File;
 use std::io::prelude::*;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
-use std::sync::Arc;
 
 type Result<I> = std::result::Result<I, Error>;
 
@@ -729,7 +727,7 @@ pub fn eval(
 
 #[test]
 fn test_expr() {
-    let mut shell = Shell::new(Arc::new(Interface::new("rushell").unwrap()));
+    let mut shell = Shell::new_for_test();
     assert_eq!(
         evaluate_expr(
             &mut shell,

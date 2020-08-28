@@ -43,7 +43,7 @@ use std::fs;
 use std::io;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
@@ -55,7 +55,27 @@ fn main() -> io::Result<()> {
     interface.bind_sequence("\x1b\x1b[D", linefeed::Command::from_str("backward-word"));
     interface.bind_sequence("\x1b\x1b[C", linefeed::Command::from_str("forward-word"));
 
-    let mut shell = shell::Shell::new(interface.clone());
+    let homedir = dirs::home_dir().expect("Cannot read home_dir()");
+
+    let style = if release == true {
+        Color::Fixed(87).bold()
+    } else {
+        Color::Red.bold()
+    };
+
+    let conf_dir = homedir.join(".config/rushell/");
+    let history_file = conf_dir.join("history");
+
+    if fs::create_dir_all(&conf_dir).is_ok() {
+        let _ = interface.load_history(&history_file);
+    }
+
+    let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
+    let folder_scanner = Arc::new(Mutex::new(path::FolderScanner::new(&homedir)));
+
+    interface.set_completer(Arc::new(path::ShellCompleter::new(command_scanner.clone(), folder_scanner.clone())));
+
+    let mut shell = shell::Shell::new(interface.clone(), command_scanner.clone());
 
     // Import environment variables.
     for (key, value) in std::env::vars() {
@@ -65,6 +85,8 @@ fn main() -> io::Result<()> {
     if shell.get("PATH").is_none() {
         shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
     }
+
+    shell.run_str("alias ls=\"ls -Gp\"");
 
     let stdout = std::fs::File::create("/dev/stdout").unwrap();
     shell.set_interactive(unistd::isatty(stdout.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
@@ -81,40 +103,10 @@ fn main() -> io::Result<()> {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
-    let homedir = dirs::home_dir().expect("Cannot read home_dir()");
-    let homedir_str = homedir.to_str().unwrap();
-
-    let style = if release == true {
-        Color::Fixed(87).bold()
-    } else {
-        Color::Red.bold()
-    };
-    // let text = ">> ";
-
-    let conf_dir = homedir.join(".config/rushell/");
-    let history_file = conf_dir.join("history");
-
-    if fs::create_dir_all(&conf_dir).is_ok() {
-        let _ = interface.load_history(&history_file);
-    }
-
-    let mut command_scanner = path::CommandScanner::new();
-
-    // The character values '\x01' and '\x02' are used to indicate the beginning
-    // and end of an escape sequence. This informs linefeed, which cannot itself
-    // interpret the meaning of escape sequences, that these characters are not
-    // visible when the prompt is drawn and should not factor into calculating
-    // the visible length of the prompt string.
-
     loop {
-        if let Some(path) = env::var_os("PATH") {
-            if let Ok(path) = path.into_string() {
-                if command_scanner.scan(&path) == true {
-                    interface.set_completer(Arc::new(path::ShellCompleter::new(&command_scanner, homedir_str)));
-                    shell.set_commands(command_scanner.commands());
-                }
-            }
-        }
+        env::var_os("PATH").map(|path|
+            path.into_string().map(|path| command_scanner.lock().unwrap().scan(&path))
+        );
 
         let mut cwd = env::current_dir().expect("Error in current_dir()");
         if let Ok(strip_home) = cwd.strip_prefix(&homedir) {
@@ -134,8 +126,9 @@ fn main() -> io::Result<()> {
         match readline {
             ReadResult::Input(line) => {
                 shell.run_str(&line);
-                if line.trim().len() != 0 {
-                    interface.add_history_unique(line);
+                let trimed = line.trim();
+                if trimed.len() != 0 {
+                    interface.add_history_unique(trimed.to_owned());
                 }
             }
             _ => break,
@@ -147,8 +140,7 @@ fn main() -> io::Result<()> {
                 "save_history error: {} {}",
                 history_file.display(),
                 err
-            )
-            .unwrap()
+            ).unwrap()
         });
     }
 

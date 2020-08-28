@@ -15,7 +15,7 @@ use std::io::prelude::*;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// A isolated shell execution environment.
 pub struct Shell {
@@ -64,11 +64,11 @@ pub struct Shell {
     pub last_fore_job: Option<Rc<Job>>,
 
     linefeed: Arc<Interface<DefaultTerminal>>,
-    commands: Arc<path::Commands>,
+    commands_scanner: Arc<Mutex<path::CommandScanner>>,
 }
 
 impl Shell {
-    pub fn new(linefeed: Arc<Interface<DefaultTerminal>>) -> Shell {
+    pub fn new(linefeed: Arc<Interface<DefaultTerminal>>, scanner: Arc<Mutex<path::CommandScanner>>) -> Shell {
         Shell {
             shell_pgid: getpid(),
             script_name: "".to_owned(),
@@ -90,8 +90,13 @@ impl Shell {
             last_fore_job: None,
             last_back_job: None,
             linefeed: linefeed,
-            commands: Arc::new(path::Commands::new()),
+            commands_scanner: scanner,
         }
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test() -> Shell {
+        Shell::new(Arc::new(Interface::new("rushell").unwrap()), Arc::new(Mutex::new(path::CommandScanner::new())))
     }
 
     pub fn set_script_name(&mut self, name: &str) {
@@ -185,7 +190,7 @@ impl Shell {
 
         if !is_local && key == "PATH" {
             // $PATH is being updated. Reload directories.
-            if let Value::String(ref path) = value {
+            if let Value::String(ref _path) = value {
                 // self.path_table().scan(path);
             }
         }
@@ -257,12 +262,8 @@ impl Shell {
         })
     }
 
-    pub fn set_commands(&mut self, commands: Arc<path::Commands>) {
-        self.commands = commands;
-    }
-
     pub fn commands(&self) -> Arc<path::Commands> {
-        Arc::clone(&self.commands)
+        self.commands_scanner.lock().unwrap().commands()
     }
 
     pub fn jobs(&self) -> &HashMap<JobId, Rc<Job>> {
