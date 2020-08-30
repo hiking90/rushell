@@ -19,6 +19,8 @@ use std::hash::{Hash, Hasher};
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::RawFd;
 use std::rc::Rc;
+use std::fs::File;
+use std::io::{Read, SeekFrom, Seek};
 
 type Result<I> = std::result::Result<I, Error>;
 
@@ -391,7 +393,7 @@ pub fn run_external_command(
     }
 
     // Determine the absolute path of the command.
-    let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") {
+    let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") || argv[0].starts_with("../") {
         CString::new(argv[0].as_str())?
     } else {
         match shell.commands().get(&argv[0]) {
@@ -477,20 +479,91 @@ pub fn run_external_command(
                 }
             }
 
-            let args: Vec<&std::ffi::CStr> = args.iter().map(|s| s.as_c_str()).collect();
-            match execv(&argv0, &args) {
-                Ok(_) => {
-                    unreachable!();
+            shell_execv(shell, ctx, argv0, args);
+            unreachable!();
+            // let args: Vec<&std::ffi::CStr> = args.iter().map(|s| s.as_c_str()).collect();
+            // match execv(&argv0, &args) {
+            //     Ok(_) => {
+            //         unreachable!();
+            //     }
+            //     Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
+            //         print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.", argv0);
+            //         std::process::exit(1);
+            //     }
+            //     Err(err) => {
+            //         print_err!("Failed to exec {:?} ({})", argv0, err);
+            //         std::process::exit(1);
+            //     }
+            // }
+        }
+    }
+}
+
+fn check_binary_file(sample: &[u8]) -> bool {
+    for ch in sample {
+        if *ch == 0 { return true; }
+        if *ch == '\n' as u8 { return false; }
+    }
+    return false;
+}
+
+fn shell_execv(shell: &mut Shell,
+    ctx: &Context,
+    command: CString,
+    args: Vec<CString>,
+) {
+
+    let exec_args: Vec<&std::ffi::CStr> = args.iter().map(|s| s.as_c_str()).collect();
+    match execv(&command, &exec_args) {
+        Ok(_) => {
+            unreachable!();
+        }
+        Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
+            print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.", command);
+            std::process::exit(1);
+        }
+        Err(nix::Error::Sys(nix::errno::Errno::ENOEXEC)) => {
+            let mut f = File::open(&command.to_str().unwrap()).unwrap();
+            let mut sample = [0; 80];
+
+            let sample_len = f.read(&mut sample).unwrap();
+
+            if sample_len > 2 && sample[0] == '#' as u8 && sample[1] == '!' as u8 {
+                let line_end = sample[2..].iter().position(|v| *v == '\n' as u8).unwrap_or(sample_len);
+                let line = if let Ok(line) = std::str::from_utf8(&sample[2..line_end]) {
+                    line
+                } else {
+                    print_err!("Invalid UTF8 character in the first line of `{:?}'", command);
+                    std::process::exit(1);
+                };
+
+                let mut new_args = Vec::new();
+                line.split_ascii_whitespace().for_each(|arg| new_args.push(CString::new(arg).unwrap()));
+                new_args.extend(args);
+                shell_execv(shell, ctx, new_args[0].to_owned(), new_args);
+            } else {
+                if check_binary_file(&sample[..sample_len]) == true {
+                    print_err!("{:?}: cannot execute binary file", command);
+                    std::process::exit(126);
                 }
-                Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
-                    print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.", argv0);
+                f.seek(SeekFrom::Start(0)).unwrap();
+                let mut script = String::new();
+                f.read_to_string(&mut script).unwrap();
+                if let ExitStatus::ExitedWith(status) = shell.run_str(script.as_str()) {
+                    std::process::exit(status);
+                } else {
                     std::process::exit(1);
                 }
-                Err(err) => {
-                    print_err!("Failed to exec {:?} ({})", argv0, err);
-                    std::process::exit(1);
-                }
-            }
+            };
+        }
+        Err(err) => {
+            let exit_code = if err == nix::Error::Sys(nix::errno::Errno::ENOENT) {
+                127
+            } else {
+                126
+            };
+            print_err!("Failed to exec {:?} ({})", command, err);
+            std::process::exit(exit_code);
         }
     }
 }

@@ -41,16 +41,21 @@ impl Folder {
         self.entries.clear();
 
         for entry in fs::read_dir(&self.path)? {
-            // let entry = entry?;
-            // let meta = entry.metadata()?;
-            // let mode = meta.permissions().mode();
             self.entries.push(Arc::new(entry?));
-            // if meta.is_file() && (mode & 0o111) != 0 {
-            //     self.entries.push(Arc::new(entry));
-            // }
         }
 
         Ok(true)
+    }
+
+    fn retain_executable(&mut self) {
+        self.entries.retain(|entry|
+            match entry.metadata() {
+                Ok(meta) => {
+                    meta.is_file() && (meta.permissions().mode() & 0o111) != 0
+                }
+                Err(_) => { false }
+            }
+        );
     }
 }
 
@@ -93,14 +98,7 @@ impl CommandScanner {
             };
 
             if folder.update().unwrap_or(false) {
-                folder.entries.retain(|entry|
-                    match entry.metadata() {
-                        Ok(meta) => {
-                            meta.is_file() && (meta.permissions().mode() & 0o111) != 0
-                        }
-                        Err(_) => { false }
-                    }
-                );
+                folder.retain_executable();
                 updated = true;
             }
 
@@ -136,27 +134,16 @@ const TILDE: &'static str = "~";
 
 pub struct FolderScanner {
     folders: Vec<Folder>,
-    homedir: PathBuf,
 }
 
 impl FolderScanner {
-    pub fn new(homedir: &Path) -> FolderScanner {
+    pub fn new() -> FolderScanner {
         FolderScanner {
             folders: Vec::new(),
-            homedir: homedir.to_path_buf(),
         }
     }
 
     pub fn scan(&mut self, path: &Path) -> Option<&Folder> {
-        // let tilde = path.starts_with(TILDE);
-
-        // let mut path = path.to_owned();
-        let path = if let Ok(striped) = path.strip_prefix(TILDE) {
-            self.homedir.join(striped).canonicalize().ok()?
-        } else {
-            path.canonicalize().ok()?
-        };
-
         let mut folder = if let Some(idx) = self.folders.iter().position(|f| f.path == path) {
             self.folders.remove(idx)
         } else {
@@ -182,19 +169,30 @@ impl FolderScanner {
 pub struct ShellCompleter {
     commands_scanner: Arc<Mutex<CommandScanner>>,
     folder_scanner: Arc<Mutex<FolderScanner>>,
+    homedir: PathBuf,
 }
 
 impl ShellCompleter {
     pub fn new(commands_scanner: Arc<Mutex<CommandScanner>>,
-        folder_scanner: Arc<Mutex<FolderScanner>>) -> ShellCompleter {
+        folder_scanner: Arc<Mutex<FolderScanner>>,
+        homedir: &Path) -> ShellCompleter {
         ShellCompleter {
             commands_scanner: commands_scanner,
             folder_scanner: folder_scanner,
+            homedir: homedir.to_path_buf(),
+        }
+    }
+
+    fn to_path(&self, path: &str) -> Option<PathBuf> {
+        let path = PathBuf::from(path);
+        if let Ok(striped) = path.strip_prefix(TILDE) {
+            self.homedir.join(striped).canonicalize().ok()
+        } else {
+            path.canonicalize().ok()
         }
     }
 
     pub fn complete_command(&self, command: &str) -> Vec<linefeed::Completion> {
-        let mut res = Vec::new();
         let mut command = String::from(command);
         let mut prefix = "";
 
@@ -202,6 +200,33 @@ impl ShellCompleter {
             prefix = "`";
             command = command.trim_start_matches("`").to_owned();
         }
+
+        let (base_dir, fname) = split_path(&command);
+        if let Some(path) = base_dir {
+            if let Some(path) = self.to_path(path) {
+                if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
+                    let entries = folder.entries.iter()
+                        .filter(|entry|
+                            match entry.metadata() {
+                                Ok(meta) => {
+                                    meta.is_dir() || (meta.permissions().mode() & 0o111) != 0
+                                }
+                                Err(_) => { false }
+                            }
+                        )
+                        // Drop Unix hidden file that is started with "."
+                        .filter(|entry| entry.file_name().to_str().map_or(false, |name| !name.starts_with(".")))
+                        .map(|entry| entry.clone())
+                        .collect();
+
+                    return self.folder_to_completion(&entries, base_dir, fname)
+                }
+            } else {
+                return Vec::new();
+            }
+        }
+
+        let mut res = Vec::new();
 
         for key in self.commands_scanner.lock().unwrap().commands().keys() {
             if key.starts_with(&command) &&
@@ -223,47 +248,52 @@ impl ShellCompleter {
                 });
             }
         }
-        res.sort_by(|a, b| a.display().cmp(&b.display()));
         res
     }
 
-    pub fn complete_folder(&self, path: &str) -> Vec<linefeed::Completion> {
-        let (base_dir, fname) = split_path(path);
-        let path = PathBuf::from(base_dir.unwrap_or("."));
-
+    fn folder_to_completion(&self, entries: &Vec<Arc<fs::DirEntry>>, base_dir: Option<&str>, fname: &str) -> Vec<linefeed::Completion> {
         let mut res = Vec::new();
 
-        if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
-            for entry in &folder.entries {
-                let ent_name = entry.file_name();
-                if let Ok(path) = ent_name.into_string() {
-                    if path.starts_with(fname) {
-                        let (name, display) = if let Some(dir) = base_dir {
-                            (format!("{}{}", dir, path), Some(path))
-                        } else {
-                            (path, None)
-                        };
+        for entry in entries {
+            let ent_name = entry.file_name();
+            if let Ok(path) = ent_name.into_string() {
+                if path.starts_with(fname) {
+                    let (name, display) = if let Some(dir) = base_dir {
+                        (format!("{}{}", dir, path), Some(path))
+                    } else {
+                        (path, None)
+                    };
 
-                        let is_dir = entry.metadata().ok()
-                            .map_or(false, |m| m.is_dir());
+                    let is_dir = entry.metadata().ok()
+                        .map_or(false, |m| m.is_dir());
 
-                        let suffix = if is_dir {
-                            Suffix::Some(MAIN_SEPARATOR)
-                        } else {
-                            Suffix::Default
-                        };
+                    let suffix = if is_dir {
+                        Suffix::Some(MAIN_SEPARATOR)
+                    } else {
+                        Suffix::Default
+                    };
 
-                        res.push(linefeed::Completion{
-                            completion: name,
-                            display: display,
-                            suffix: suffix,
-                        });
-                    }
+                    res.push(linefeed::Completion{
+                        completion: name,
+                        display: display,
+                        suffix: suffix,
+                    });
                 }
             }
         }
 
         res
+    }
+
+    pub fn complete_folder(&self, path: &str) -> Vec<linefeed::Completion> {
+        let (base_dir, fname) = split_path(path);
+        if let Some(path) = self.to_path(base_dir.unwrap_or(".")) {
+            if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
+                return self.folder_to_completion(&folder.entries, base_dir, fname)
+            }
+        }
+
+        Vec::new()
     }
 }
 
@@ -284,33 +314,15 @@ impl<Term: Terminal> Completer<Term> for ShellCompleter {
         input.truncate(start);
         let input = input.trim();
 
-        if input.is_empty() || input.ends_with("&") || input.ends_with("|") ||
+        let mut res = if input.is_empty() || input.ends_with("&") || input.ends_with("|") ||
             input.ends_with(";") || input.ends_with("`") {
-            Some(self.complete_command(word))
+            self.complete_command(word)
         } else {
-            Some(self.complete_folder(word))
-            // let mut word = word.to_owned();
-            // let tilde = word.starts_with("~");
+            self.complete_folder(word)
+        };
 
-            // if tilde == true {
-            //     word.replace_range(..1, &self.homedir);
-            // }
-
-            // let mut res = complete::complete_path(&word);
-
-            // if tilde == true {
-            //     for c in res.iter_mut() {
-            //         if c.completion.starts_with(&self.homedir) {
-            //             let mut completion = c.completion.to_owned();
-            //             completion.replace_range(..self.homedir.len(), "~");
-            //             c.completion = completion;
-            //             c.display = None;
-            //         }
-            //     }
-            // }
-
-            // Some(res)
-        }
+        res.sort_by(|a, b| a.display().cmp(&b.display()));
+        Some(res)
     }
 
     fn word_start(&self, line: &str, end: usize, _reader: &Prompter<Term>) -> usize {

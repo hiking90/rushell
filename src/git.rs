@@ -56,7 +56,7 @@ pub fn prompt() -> String {
                 git.branch,
                 if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
                 if git.untracked {"?"} else {""},
-                );
+            );
         }
     }
     "".to_string()

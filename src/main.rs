@@ -71,9 +71,9 @@ fn main() -> io::Result<()> {
     }
 
     let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
-    let folder_scanner = Arc::new(Mutex::new(path::FolderScanner::new(&homedir)));
+    let folder_scanner = Arc::new(Mutex::new(path::FolderScanner::new()));
 
-    interface.set_completer(Arc::new(path::ShellCompleter::new(command_scanner.clone(), folder_scanner.clone())));
+    interface.set_completer(Arc::new(path::ShellCompleter::new(command_scanner.clone(), folder_scanner.clone(), &homedir)));
 
     let mut shell = shell::Shell::new(interface.clone(), command_scanner.clone());
 
