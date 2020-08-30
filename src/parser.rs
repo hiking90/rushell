@@ -777,6 +777,9 @@ impl ShellParser {
                             Rule::param_ex_span => {
                                 spans.push(self.visit_param_ex_span(span_in_quote, true))
                             }
+                            Rule::expr_span => {
+                                spans.push(self.visit_expr_span(span_in_quote))
+                            }
                             _ => unreachable!(),
                         }
                     }

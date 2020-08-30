@@ -481,20 +481,6 @@ pub fn run_external_command(
 
             shell_execv(shell, ctx, argv0, args);
             unreachable!();
-            // let args: Vec<&std::ffi::CStr> = args.iter().map(|s| s.as_c_str()).collect();
-            // match execv(&argv0, &args) {
-            //     Ok(_) => {
-            //         unreachable!();
-            //     }
-            //     Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
-            //         print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.", argv0);
-            //         std::process::exit(1);
-            //     }
-            //     Err(err) => {
-            //         print_err!("Failed to exec {:?} ({})", argv0, err);
-            //         std::process::exit(1);
-            //     }
-            // }
         }
     }
 }
@@ -549,6 +535,7 @@ fn shell_execv(shell: &mut Shell,
                 f.seek(SeekFrom::Start(0)).unwrap();
                 let mut script = String::new();
                 f.read_to_string(&mut script).unwrap();
+                shell.set_interactive(false);
                 if let ExitStatus::ExitedWith(status) = shell.run_str(script.as_str()) {
                     std::process::exit(status);
                 } else {

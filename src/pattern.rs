@@ -69,15 +69,18 @@ impl PatternWord {
                     }
                 }
             }
-
             let mut paths = Vec::new();
-            for entry in glob(&pattern).expect("failed to glob") {
-                match entry {
-                    Ok(path) => {
-                        paths.push(path.to_str().unwrap().to_string());
+            if let Ok(glob_paths) = glob(&pattern) {
+                for entry in glob_paths {
+                    match entry {
+                        Ok(path) => {
+                            paths.push(path.to_str().unwrap().to_string());
+                        }
+                        Err(e) => error!("glob error: {:?}", e),
                     }
-                    Err(e) => error!("glob error: {:?}", e),
                 }
+            } else {
+                paths.push(pattern);
             }
             if paths.is_empty() {
                 return Err(Error::from(NoMatchesError));
