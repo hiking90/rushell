@@ -129,6 +129,8 @@ fn main() -> io::Result<()> {
         #[cfg(target_os = "macos")]
         shell.run_str("alias ls=\"ls -Gp\"");
 
+        git::aliases(&mut shell);
+
         let stdout = std::fs::File::create("/dev/stdout").unwrap();
         shell.set_interactive(unistd::isatty(stdout.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
     }

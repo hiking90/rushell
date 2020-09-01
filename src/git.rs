@@ -1,4 +1,6 @@
 use std::process::Command;
+use crate::shell::Shell;
+
 
 pub struct Git {
     branch: String,
@@ -60,4 +62,43 @@ pub fn prompt() -> String {
         }
     }
     "".to_string()
+}
+
+pub fn aliases(shell: &mut Shell) {
+    let aliases = [
+        ("g", "git"),
+        ("ga", "git add"),
+        ("gaa", "git add --all"),
+        ("gapa", "git add --patch"),
+        ("gau", "git add --update"),
+        ("gav", "git add --verbose"),
+        ("gap", "git apply"),
+        ("gapt", "git apply --3way"),
+        ("gb", "git branch"),
+        ("gba", "git branch -a"),
+        ("gbd", "git branch -d"),
+        ("gd", "git diff"),
+        ("gcb", "git checkout -b"),
+        ("gcmsg", "git commit -m"),
+        ("grm", "git rm"),
+        ("grmc", "git rm --cached"),
+        ("gsh", "git show"),
+        ("gst", "git status"),
+        ("gsta", "git stash push"),
+        ("gstl", "git stash list"),
+        ("gstp", "git stash pop"),
+        ("gp", "git push"),
+        ("gpf!", "git push --force"),
+        ("gupa", "git pull --rebase --autostash"),
+        ("gam", "git am"),
+        ("gamc", "git am --continue"),
+        ("gams", "git am --skip"),
+        ("gama", "git am --abort"),
+        ("gamscp", "git am --show-current-patch"),
+    ];
+
+    for alias in aliases.iter() {
+        shell.add_alias(alias.0, alias.1.to_string());
+    }
+
 }
