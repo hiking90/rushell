@@ -1,6 +1,7 @@
 use nix::unistd;
 use std::io::Write;
 use std::os::unix::io::RawFd;
+use std::path::PathBuf;
 
 /// `File`-like object but does not close the `fd`.
 pub struct FdFile {
@@ -58,3 +59,8 @@ impl Write for FdFile {
         Ok(())
     }
 }
+
+pub fn home_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or(PathBuf::from("/"))
+}
+

@@ -3,6 +3,7 @@ use crate::builtins::INTERNAL_COMMANDS;
 use linefeed::complete::{Completer, Suffix};
 use linefeed::prompter::Prompter;
 use linefeed::terminal::Terminal;
+use crate::utils;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -176,24 +177,21 @@ impl FolderScanner {
 pub struct ShellCompleter {
     commands_scanner: Arc<Mutex<CommandScanner>>,
     folder_scanner: Arc<Mutex<FolderScanner>>,
-    homedir: PathBuf,
 }
 
 impl ShellCompleter {
     pub fn new(commands_scanner: Arc<Mutex<CommandScanner>>,
-        folder_scanner: Arc<Mutex<FolderScanner>>,
-        homedir: &Path) -> ShellCompleter {
+        folder_scanner: Arc<Mutex<FolderScanner>>) -> ShellCompleter {
         ShellCompleter {
             commands_scanner: commands_scanner,
             folder_scanner: folder_scanner,
-            homedir: homedir.to_path_buf(),
         }
     }
 
     fn to_path(&self, path: &str) -> Option<PathBuf> {
         let path = PathBuf::from(path);
         if let Ok(striped) = path.strip_prefix(TILDE) {
-            self.homedir.join(striped).canonicalize().ok()
+            utils::home_dir().join(striped).canonicalize().ok()
         } else {
             path.canonicalize().ok()
         }

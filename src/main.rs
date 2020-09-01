@@ -48,7 +48,7 @@ use std::sync::{Arc, Mutex};
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn main() -> io::Result<()> {
-    let homedir = dirs::home_dir().unwrap_or(PathBuf::from("/"));
+    let homedir = utils::home_dir();
 
     let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
     let mut shell = shell::Shell::new(command_scanner.clone());
@@ -106,7 +106,7 @@ fn main() -> io::Result<()> {
 
     let folder_scanner = Arc::new(Mutex::new(path::FolderScanner::new()));
 
-    interface.set_completer(Arc::new(path::ShellCompleter::new(command_scanner.clone(), folder_scanner.clone(), &homedir)));
+    interface.set_completer(Arc::new(path::ShellCompleter::new(command_scanner.clone(), folder_scanner.clone())));
 
     shell.set_linefeed(interface.clone());
 
@@ -144,7 +144,7 @@ fn main() -> io::Result<()> {
         command_scanner.lock().unwrap().scan_path_env();
 
         let mut cwd = env::current_dir().expect("Error in current_dir()");
-        if let Ok(strip_home) = cwd.strip_prefix(&homedir) {
+        if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
             cwd = PathBuf::from("~").join(strip_home);
         }
 
