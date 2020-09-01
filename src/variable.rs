@@ -1,6 +1,6 @@
 use crate::parser;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// A variable value.
 #[derive(Debug, Clone)]
@@ -66,7 +66,7 @@ impl Variable {
 /// A variable scope.
 pub struct Frame {
     /// A `(variable name, varible)` map.
-    vars: HashMap<String, Rc<Variable>>,
+    vars: HashMap<String, Arc<Variable>>,
 }
 
 impl Frame {
@@ -77,24 +77,24 @@ impl Frame {
     }
 
     pub fn define(&mut self, key: &str) {
-        self.vars.insert(key.into(), Rc::new(Variable::new(None)));
+        self.vars.insert(key.into(), Arc::new(Variable::new(None)));
     }
 
     pub fn set(&mut self, key: &str, value: Value) {
         self.vars
-            .insert(key.into(), Rc::new(Variable::new(Some(value))));
+            .insert(key.into(), Arc::new(Variable::new(Some(value))));
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<Rc<Variable>> {
+    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
         self.vars.remove(key)
     }
 
-    pub fn get(&self, key: &str) -> Option<Rc<Variable>> {
+    pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
         self.vars.get(key).cloned()
     }
 
     /// Returns `$1`, `$2`, ...
-    pub fn get_args(&self) -> Vec<Rc<Variable>> {
+    pub fn get_args(&self) -> Vec<Arc<Variable>> {
         let mut args = Vec::new();
         for i in 1.. {
             if let Some(var) = self.get(&i.to_string()) {
@@ -132,12 +132,12 @@ impl Frame {
     }
 
     /// Removes `$<index>`.
-    pub fn remove_nth_arg(&mut self, index: usize) -> Option<Rc<Variable>> {
+    pub fn remove_nth_arg(&mut self, index: usize) -> Option<Arc<Variable>> {
         self.remove(&index.to_string())
     }
 
     /// Returns `$<index>`.
-    pub fn get_nth_arg(&self, index: usize) -> Option<Rc<Variable>> {
+    pub fn get_nth_arg(&self, index: usize) -> Option<Arc<Variable>> {
         self.get(&index.to_string())
     }
 

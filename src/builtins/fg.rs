@@ -1,7 +1,7 @@
 use crate::builtins::InternalCommandContext;
 use crate::process::{continue_job, ExitStatus, Job, JobId};
 use std::io::Write;
-use std::rc::Rc;
+use std::sync::Arc;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -15,7 +15,7 @@ struct Opt {
 pub(super) fn parse_job_id(
     ctx: &mut InternalCommandContext,
     job_id: Option<String>,
-) -> Result<Rc<Job>, ExitStatus> {
+) -> Result<Arc<Job>, ExitStatus> {
     let id = match job_id {
         Some(job_id) => {
             let job_id = job_id.as_str();

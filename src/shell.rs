@@ -14,8 +14,7 @@ use std::io;
 use std::io::prelude::*;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// A isolated shell execution environment.
 pub struct Shell {
@@ -31,7 +30,7 @@ pub struct Shell {
     /// `$?`
     last_status: i32,
     /// `$!`
-    last_back_job: Option<Rc<Job>>,
+    last_back_job: Option<Arc<Job>>,
 
     /// Global scope.
     global: Frame,
@@ -50,25 +49,25 @@ pub struct Shell {
     pub noexec: bool,
 
     /// Jobs.
-    jobs: HashMap<JobId, Rc<Job>>,
+    jobs: HashMap<JobId, Arc<Job>>,
     /// Background jobs.
-    background_jobs: HashSet<Rc<Job>>,
+    background_jobs: HashSet<Arc<Job>>,
     /// The current process states spawned by the shell.
     states: HashMap<Pid, ProcessState>,
     /// The mapping from a pid (not job's pgid) to its job.
-    pid_job_mapping: HashMap<Pid, Rc<Job>>,
+    pid_job_mapping: HashMap<Pid, Arc<Job>>,
     /// A stack of pathes maintained by pushd(1) / popd(1).
     cd_stack: Vec<String>,
 
     // TODO: Remove this field or make it private.
-    pub last_fore_job: Option<Rc<Job>>,
+    pub last_fore_job: Option<Arc<Job>>,
 
     linefeed: Option<Arc<Interface<DefaultTerminal>>>,
-    commands_scanner: Arc<Mutex<path::CommandScanner>>,
+    commands_scanner: path::CommandScanner,
 }
 
 impl Shell {
-    pub fn new(scanner: Arc<Mutex<path::CommandScanner>>) -> Shell {
+    pub fn new() -> Shell {
         Shell {
             shell_pgid: getpid(),
             script_name: "".to_owned(),
@@ -90,13 +89,13 @@ impl Shell {
             last_fore_job: None,
             last_back_job: None,
             linefeed: None,
-            commands_scanner: scanner,
+            commands_scanner: path::CommandScanner::new(),
         }
     }
 
     #[cfg(test)]
     pub fn new_for_test() -> Shell {
-        Shell::new(Arc::new(Mutex::new(path::CommandScanner::new())))
+        Shell::new()
     }
 
     pub fn set_script_name(&mut self, name: &str) {
@@ -120,11 +119,11 @@ impl Shell {
         self.last_status = status;
     }
 
-    pub fn last_back_job(&self) -> &Option<Rc<Job>> {
+    pub fn last_back_job(&self) -> &Option<Arc<Job>> {
         &self.last_back_job
     }
 
-    pub fn set_last_back_job(&mut self, job: Rc<Job>) {
+    pub fn set_last_back_job(&mut self, job: Arc<Job>) {
         self.last_back_job = Some(job);
     }
 
@@ -196,7 +195,7 @@ impl Shell {
         }
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<Rc<Variable>> {
+    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
         if let Some(var) = self.current_frame_mut().remove(key) {
             return Some(var);
         }
@@ -208,7 +207,7 @@ impl Shell {
         None
     }
 
-    pub fn get(&self, key: &str) -> Option<Rc<Variable>> {
+    pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
         if let Some(var) = self.current_frame().get(key) {
             Some(var)
         } else {
@@ -263,18 +262,18 @@ impl Shell {
     }
 
     pub fn commands(&self) -> Arc<path::Commands> {
-        self.commands_scanner.lock().unwrap().commands()
+        self.commands_scanner.commands()
     }
 
-    pub fn jobs(&self) -> &HashMap<JobId, Rc<Job>> {
+    pub fn jobs(&self) -> &HashMap<JobId, Arc<Job>> {
         &self.jobs
     }
 
-    pub fn jobs_mut(&mut self) -> &mut HashMap<JobId, Rc<Job>> {
+    pub fn jobs_mut(&mut self) -> &mut HashMap<JobId, Arc<Job>> {
         &mut self.jobs
     }
 
-    pub fn background_jobs_mut(&mut self) -> &mut HashSet<Rc<Job>> {
+    pub fn background_jobs_mut(&mut self) -> &mut HashSet<Arc<Job>> {
         &mut self.background_jobs
     }
 
@@ -288,7 +287,7 @@ impl Shell {
         self.states.get(&pid)
     }
 
-    pub fn get_job_by_pid(&self, pid: Pid) -> Option<&Rc<Job>> {
+    pub fn get_job_by_pid(&self, pid: Pid) -> Option<&Arc<Job>> {
         self.pid_job_mapping.get(&pid)
     }
 
@@ -301,9 +300,9 @@ impl Shell {
         JobId::new(id)
     }
 
-    pub fn create_job(&mut self, name: String, pgid: Pid, childs: Vec<Pid>) -> Rc<Job> {
+    pub fn create_job(&mut self, name: String, pgid: Pid, childs: Vec<Pid>) -> Arc<Job> {
         let id = self.alloc_job_id();
-        let job = Rc::new(Job::new(id, pgid, name, childs.clone()));
+        let job = Arc::new(Job::new(id, pgid, name, childs.clone()));
         for child in childs {
             self.set_process_state(child, ProcessState::Running);
             self.pid_job_mapping.insert(child, job.clone());
@@ -314,11 +313,11 @@ impl Shell {
     }
 
     #[inline]
-    pub fn last_fore_job(&self) -> Option<Rc<Job>> {
+    pub fn last_fore_job(&self) -> Option<Arc<Job>> {
         self.last_fore_job.as_ref().cloned()
     }
 
-    pub fn find_job_by_id(&self, id: JobId) -> Option<Rc<Job>> {
+    pub fn find_job_by_id(&self, id: JobId) -> Option<Arc<Job>> {
         self.jobs.get(&id).cloned()
     }
 
@@ -377,7 +376,7 @@ impl Shell {
         self.linefeed.as_ref().map(|linefeed| Arc::clone(linefeed))
     }
 
-    // pub fn command_scanner(&self) -> Arc<Mutex<path::CommandScanner>> {
-    //     self.commands_scanner.clone()
-    // }
+    pub fn scan_path(&mut self) {
+        self.commands_scanner.scan_path();
+    }
 }

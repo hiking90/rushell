@@ -11,14 +11,13 @@ use nix::sys::signal::{kill, sigaction, SaFlags, SigAction, SigHandler, SigSet, 
 use nix::sys::termios::{tcgetattr, tcsetattr, SetArg::TCSADRAIN, Termios};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, dup2, execv, fork, getpid, setpgid, tcsetpgrp, ForkResult, Pid};
-use std::cell::RefCell;
 use std::ffi::CString;
 use std::fmt;
 use std::fs::OpenOptions;
 use std::hash::{Hash, Hasher};
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::RawFd;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::fs::File;
 use std::io::{Read, SeekFrom, Seek};
 
@@ -106,7 +105,7 @@ pub struct Job {
     pub cmd: String,
     // TODO: Remove entries in shell.states on destruction.
     pub processes: Vec<Pid>,
-    pub termios: RefCell<Option<Termios>>,
+    pub termios: Mutex<Option<Termios>>,
 }
 
 impl Job {
@@ -116,7 +115,7 @@ impl Job {
             pgid,
             cmd,
             processes,
-            termios: RefCell::new(None),
+            termios: Mutex::new(None),
         }
     }
 
@@ -175,7 +174,7 @@ impl Hash for Job {
     }
 }
 
-pub fn continue_job(shell: &mut Shell, job: &Rc<Job>, background: bool) {
+pub fn continue_job(shell: &mut Shell, job: &Arc<Job>, background: bool) {
     // Mark all stopped processes as running.
     for proc in &job.processes {
         if let ProcessState::Stopped(_) = shell.get_process_state(*proc).unwrap() {
@@ -199,13 +198,14 @@ fn restore_terminal_attrs(termios: &Termios) {
     tcsetattr(0, TCSADRAIN, termios).expect("failed to tcsetattr");
 }
 
-pub fn run_in_foreground(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) -> ProcessState {
+pub fn run_in_foreground(shell: &mut Shell, job: &Arc<Job>, sigcont: bool) -> ProcessState {
     shell.last_fore_job = Some(job.clone());
     shell.background_jobs_mut().remove(job);
     set_terminal_process_group(job.pgid);
 
     if sigcont {
-        if let Some(ref termios) = *job.termios.borrow() {
+        // if let Some(termios) = termios
+        if let Some(termios) = &*job.termios.lock().unwrap() {
             restore_terminal_attrs(termios);
         }
         kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
@@ -216,8 +216,8 @@ pub fn run_in_foreground(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) -> Pro
     let status = wait_for_job(shell, &job);
 
     // Save the current terminal status.
-    job.termios
-        .replace(Some(tcgetattr(0).expect("failed to tcgetattr")));
+    job.termios.lock().unwrap()
+        .replace(tcgetattr(0).expect("failed to tcgetattr"));
 
     // Go back into the shell.
     set_terminal_process_group(shell.shell_pgid);
@@ -226,7 +226,7 @@ pub fn run_in_foreground(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) -> Pro
     status
 }
 
-pub fn run_in_background(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) {
+pub fn run_in_background(shell: &mut Shell, job: &Arc<Job>, sigcont: bool) {
     shell.set_last_back_job(job.clone());
     shell.background_jobs_mut().insert(job.clone());
 
@@ -236,7 +236,7 @@ pub fn run_in_background(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) {
     writeln!(shell, "[{}] {} {}", job.id, job.pgid, job.cmd).unwrap();
 }
 
-pub fn destroy_job(shell: &mut Shell, job: &Rc<Job>) {
+pub fn destroy_job(shell: &mut Shell, job: &Arc<Job>) {
     // TODO: Remove processes from shell.pid_job_mapping
     // TODO: I suppose this function should be Drop::drop().
 
@@ -272,7 +272,7 @@ pub fn check_background_jobs(shell: &mut Shell) {
 
 /// Waits for all processes in the job to exit. Note that the job will be
 /// deleted from `shell` if the process has exited.
-pub fn wait_for_job(shell: &mut Shell, job: &Rc<Job>) -> ProcessState {
+pub fn wait_for_job(shell: &mut Shell, job: &Arc<Job>) -> ProcessState {
     loop {
         if job.completed(shell) || job.stopped(shell) {
             break;

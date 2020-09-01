@@ -50,8 +50,9 @@ const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/l
 fn main() -> io::Result<()> {
     let homedir = utils::home_dir();
 
-    let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
-    let mut shell = shell::Shell::new(command_scanner.clone());
+    // let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
+    let mutex_shell = Arc::new(Mutex::new(shell::Shell::new()));
+    // let mut shell = shell::Shell::new(command_scanner.clone());
 
     // TODO: It should be removed when Rushell will achieve alpha or beta product quality.
     let mut release_mode = false;
@@ -63,11 +64,12 @@ fn main() -> io::Result<()> {
         match arg.as_str() {
             "--release" => release_mode = true,
             "-c" => {
+                let mut shell = mutex_shell.lock().unwrap();
                 let mut command = String::new();
                 while let Some(arg) = iter.next() {
                     command.push_str(&format!(" {}", arg));
                 }
-                command_scanner.lock().unwrap().scan_path_env();
+                shell.scan_path();
                 let status = match shell.run_str(&command) {
                     process::ExitStatus::ExitedWith(status) => status,
                     _ => 1,
@@ -75,7 +77,8 @@ fn main() -> io::Result<()> {
                 std::process::exit(status);
             }
             _ => {
-                command_scanner.lock().unwrap().scan_path_env();
+                let mut shell = mutex_shell.lock().unwrap();
+                shell.scan_path();
                 shell.set_script_name(&arg);
                 let status = match shell.run_file(PathBuf::from(arg)) {
                     Ok(process::ExitStatus::ExitedWith(status)) => status,
@@ -106,27 +109,30 @@ fn main() -> io::Result<()> {
 
     let folder_scanner = Arc::new(Mutex::new(path::FolderScanner::new()));
 
-    interface.set_completer(Arc::new(path::ShellCompleter::new(command_scanner.clone(), folder_scanner.clone())));
+    interface.set_completer(Arc::new(path::ShellCompleter::new(mutex_shell.clone(), folder_scanner.clone())));
 
-    shell.set_linefeed(interface.clone());
+    if let Ok(mut shell) = mutex_shell.lock() {
+        shell.set_linefeed(interface.clone());
 
-    // Import environment variables.
-    for (key, value) in std::env::vars() {
-        shell.set(&key, Value::String(value.to_owned()), false);
+        // Import environment variables.
+        for (key, value) in std::env::vars() {
+            shell.set(&key, Value::String(value.to_owned()), false);
+        }
+
+        if shell.get("PATH").is_none() {
+            shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
+        }
+
+        #[cfg(target_os = "linux")]
+        shell.run_str("alias ls=\"ls --color\"");
+
+        #[cfg(target_os = "macos")]
+        shell.run_str("alias ls=\"ls -Gp\"");
+
+        let stdout = std::fs::File::create("/dev/stdout").unwrap();
+        shell.set_interactive(unistd::isatty(stdout.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
     }
 
-    if shell.get("PATH").is_none() {
-        shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
-    }
-
-    #[cfg(target_os = "linux")]
-    shell.run_str("alias ls=\"ls --color\"");
-
-    #[cfg(target_os = "macos")]
-    shell.run_str("alias ls=\"ls -Gp\"");
-
-    let stdout = std::fs::File::create("/dev/stdout").unwrap();
-    shell.set_interactive(unistd::isatty(stdout.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
 
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
@@ -141,7 +147,7 @@ fn main() -> io::Result<()> {
     }
 
     loop {
-        command_scanner.lock().unwrap().scan_path_env();
+        mutex_shell.lock().unwrap().scan_path();
 
         let mut cwd = env::current_dir().expect("Error in current_dir()");
         if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
@@ -157,26 +163,29 @@ fn main() -> io::Result<()> {
         ))?;
 
         let readline = interface.read_line()?;
-        process::check_background_jobs(&mut shell);
-        match readline {
-            ReadResult::Input(line) => {
-                shell.run_str(&line);
-                let trimed = line.trim();
-                if trimed.len() != 0 {
-                    interface.add_history_unique(trimed.to_owned());
-                }
-            }
-            _ => break,
-        }
 
-        interface.save_history(&history_file).unwrap_or_else(|err| {
-            writeln!(
-                shell,
-                "save_history error: {} {}",
-                history_file.display(),
-                err
-            ).unwrap()
-        });
+        if let Ok(mut shell) = mutex_shell.lock() {
+            process::check_background_jobs(&mut shell);
+            match readline {
+                ReadResult::Input(line) => {
+                    shell.run_str(&line);
+                    let trimed = line.trim();
+                    if trimed.len() != 0 {
+                        interface.add_history_unique(trimed.to_owned());
+                    }
+                }
+                _ => break,
+            }
+
+            interface.save_history(&history_file).unwrap_or_else(|err| {
+                writeln!(
+                    shell,
+                    "save_history error: {} {}",
+                    history_file.display(),
+                    err
+                ).unwrap()
+            });
+        }
     }
 
     Ok(())

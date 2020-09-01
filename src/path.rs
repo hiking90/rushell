@@ -4,6 +4,7 @@ use linefeed::complete::{Completer, Suffix};
 use linefeed::prompter::Prompter;
 use linefeed::terminal::Terminal;
 use crate::utils;
+use crate::shell;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -77,7 +78,7 @@ impl CommandScanner {
         }
     }
 
-    pub fn scan_path_env(&mut self) {
+    pub fn scan_path(&mut self) {
         env::var_os("PATH").map(|path|
             path.into_string().map(|path| self.scan(&path))
         );
@@ -175,15 +176,15 @@ impl FolderScanner {
 }
 
 pub struct ShellCompleter {
-    commands_scanner: Arc<Mutex<CommandScanner>>,
+    mutex_shell: Arc<Mutex<shell::Shell>>,
     folder_scanner: Arc<Mutex<FolderScanner>>,
 }
 
 impl ShellCompleter {
-    pub fn new(commands_scanner: Arc<Mutex<CommandScanner>>,
+    pub fn new(mutex_shell: Arc<Mutex<shell::Shell>>,
         folder_scanner: Arc<Mutex<FolderScanner>>) -> ShellCompleter {
         ShellCompleter {
-            commands_scanner: commands_scanner,
+            mutex_shell: mutex_shell,
             folder_scanner: folder_scanner,
         }
     }
@@ -233,9 +234,11 @@ impl ShellCompleter {
 
         let mut res = Vec::new();
 
-        for key in self.commands_scanner.lock().unwrap().commands().keys() {
+        let shell = self.mutex_shell.lock().unwrap();
+        for key in shell.commands().keys() {
             if key.starts_with(&command) &&
-                INTERNAL_COMMANDS.get(command.as_str()).is_none() == true {
+                INTERNAL_COMMANDS.get(command.as_str()).is_none() == true &&
+                shell.lookup_alias(command.as_str()).is_none() == true {
                 res.push(linefeed::Completion {
                     completion: format!("{}{}", prefix, key),
                     display: Some(key.to_owned()),
@@ -253,6 +256,17 @@ impl ShellCompleter {
                 });
             }
         }
+
+        for (key, _) in shell.aliases() {
+            if key.starts_with(&command) {
+                res.push(linefeed::Completion {
+                    completion: format!("{}{}", prefix, key),
+                    display: Some(key.to_string()),
+                    suffix: Suffix::Default,
+                });
+            }
+        }
+
         res
     }
 
