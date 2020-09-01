@@ -48,16 +48,50 @@ use std::sync::{Arc, Mutex};
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn main() -> io::Result<()> {
-    let release = std::env::args().nth(1).unwrap_or("debug".to_string()) == "release";
+    let homedir = dirs::home_dir().unwrap_or(PathBuf::from("/"));
+
+    let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
+    let mut shell = shell::Shell::new(command_scanner.clone());
+
+    // TODO: It should be removed when Rushell will achieve alpha or beta product quality.
+    let mut release_mode = false;
+
+    let mut iter = std::env::args();
+
+    iter.next();    // Skip command name.
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--release" => release_mode = true,
+            "-c" => {
+                let mut command = String::new();
+                while let Some(arg) = iter.next() {
+                    command.push_str(&format!(" {}", arg));
+                }
+                command_scanner.lock().unwrap().scan_path_env();
+                let status = match shell.run_str(&command) {
+                    process::ExitStatus::ExitedWith(status) => status,
+                    _ => 1,
+                };
+                std::process::exit(status);
+            }
+            _ => {
+                command_scanner.lock().unwrap().scan_path_env();
+                shell.set_script_name(&arg);
+                let status = match shell.run_file(PathBuf::from(arg)) {
+                    Ok(process::ExitStatus::ExitedWith(status)) => status,
+                    _ => 1,
+                };
+                std::process::exit(status);
+            }
+        }
+    }
 
     let interface = Arc::new(Interface::new("rushell")?);
 
     interface.bind_sequence("\x1b\x1b[D", linefeed::Command::from_str("backward-word"));
     interface.bind_sequence("\x1b\x1b[C", linefeed::Command::from_str("forward-word"));
 
-    let homedir = dirs::home_dir().expect("Cannot read home_dir()");
-
-    let style = if release == true {
+    let style = if release_mode == true {
         Color::Fixed(87).bold()
     } else {
         Color::Red.bold()
@@ -70,12 +104,11 @@ fn main() -> io::Result<()> {
         let _ = interface.load_history(&history_file);
     }
 
-    let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
     let folder_scanner = Arc::new(Mutex::new(path::FolderScanner::new()));
 
     interface.set_completer(Arc::new(path::ShellCompleter::new(command_scanner.clone(), folder_scanner.clone(), &homedir)));
 
-    let mut shell = shell::Shell::new(interface.clone(), command_scanner.clone());
+    shell.set_linefeed(interface.clone());
 
     // Import environment variables.
     for (key, value) in std::env::vars() {
@@ -108,9 +141,7 @@ fn main() -> io::Result<()> {
     }
 
     loop {
-        env::var_os("PATH").map(|path|
-            path.into_string().map(|path| command_scanner.lock().unwrap().scan(&path))
-        );
+        command_scanner.lock().unwrap().scan_path_env();
 
         let mut cwd = env::current_dir().expect("Error in current_dir()");
         if let Ok(strip_home) = cwd.strip_prefix(&homedir) {
@@ -147,10 +178,6 @@ fn main() -> io::Result<()> {
             ).unwrap()
         });
     }
-
-    drop(shell);
-    drop(interface);
-    drop(command_scanner);
 
     Ok(())
 }

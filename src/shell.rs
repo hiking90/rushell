@@ -63,12 +63,12 @@ pub struct Shell {
     // TODO: Remove this field or make it private.
     pub last_fore_job: Option<Rc<Job>>,
 
-    linefeed: Arc<Interface<DefaultTerminal>>,
+    linefeed: Option<Arc<Interface<DefaultTerminal>>>,
     commands_scanner: Arc<Mutex<path::CommandScanner>>,
 }
 
 impl Shell {
-    pub fn new(linefeed: Arc<Interface<DefaultTerminal>>, scanner: Arc<Mutex<path::CommandScanner>>) -> Shell {
+    pub fn new(scanner: Arc<Mutex<path::CommandScanner>>) -> Shell {
         Shell {
             shell_pgid: getpid(),
             script_name: "".to_owned(),
@@ -89,14 +89,14 @@ impl Shell {
             cd_stack: Vec::new(),
             last_fore_job: None,
             last_back_job: None,
-            linefeed: linefeed,
+            linefeed: None,
             commands_scanner: scanner,
         }
     }
 
     #[cfg(test)]
     pub fn new_for_test() -> Shell {
-        Shell::new(Arc::new(Interface::new("rushell").unwrap()), Arc::new(Mutex::new(path::CommandScanner::new())))
+        Shell::new(Arc::new(Mutex::new(path::CommandScanner::new())))
     }
 
     pub fn set_script_name(&mut self, name: &str) {
@@ -361,10 +361,23 @@ impl Shell {
     }
 
     pub fn write_fmt(&self, args: fmt::Arguments) -> io::Result<()> {
-        self.linefeed.write_fmt(args)
+        if let Some(linefeed) = &self.linefeed {
+            linefeed.write_fmt(args)
+        } else {
+            println!("{}", args);
+            Ok(())
+        }
     }
 
-    pub fn linefeed(&self) -> Arc<Interface<DefaultTerminal>> {
-        Arc::clone(&self.linefeed)
+    pub fn set_linefeed(&mut self, linefeed: Arc<Interface<DefaultTerminal>>) {
+        self.linefeed = Some(linefeed);
     }
+
+    pub fn linefeed(&self) -> Option<Arc<Interface<DefaultTerminal>>> {
+        self.linefeed.as_ref().map(|linefeed| Arc::clone(linefeed))
+    }
+
+    // pub fn command_scanner(&self) -> Arc<Mutex<path::CommandScanner>> {
+    //     self.commands_scanner.clone()
+    // }
 }

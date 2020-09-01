@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf, is_separator, MAIN_SEPARATOR};
 use std::fs;
 use std::io;
+use std::env;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -73,6 +74,12 @@ impl CommandScanner {
             paths: Vec::new(),
             commands: Arc::new(Commands::new()),
         }
+    }
+
+    pub fn scan_path_env(&mut self) {
+        env::var_os("PATH").map(|path|
+            path.into_string().map(|path| self.scan(&path))
+        );
     }
 
     /// Scans bin directories and caches all files in them. Call this method
