@@ -14,6 +14,7 @@ extern crate structopt;
 #[macro_use]
 extern crate failure;
 extern crate glob;
+extern crate whoami;
 
 // #[cfg(test)]
 // extern crate test;
@@ -32,13 +33,13 @@ mod theme;
 mod utils;
 mod variable;
 mod git;
+mod prompt;
 
+use crate::prompt::Prompt;
 use crate::variable::Value;
-use ansi_term::Color;
 use linefeed::{Interface, ReadResult};
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use nix::unistd;
-use std::env;
 use std::fs;
 use std::io;
 use std::os::unix::io::AsRawFd;
@@ -94,12 +95,6 @@ fn main() -> io::Result<()> {
     interface.bind_sequence("\x1b\x1b[D", linefeed::Command::from_str("backward-word"));
     interface.bind_sequence("\x1b\x1b[C", linefeed::Command::from_str("forward-word"));
 
-    let style = if release_mode == true {
-        Color::Fixed(87).bold()
-    } else {
-        Color::Red.bold()
-    };
-
     let conf_dir = homedir.join(".config/rushell/");
     let history_file = conf_dir.join("history");
 
@@ -135,7 +130,6 @@ fn main() -> io::Result<()> {
         shell.set_interactive(unistd::isatty(stdout.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
     }
 
-
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
     // Don't ignore SIGCHLD! If you ignore it waitpid(2) returns ECHILD.
@@ -148,21 +142,19 @@ fn main() -> io::Result<()> {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
+    let mut prompt = prompt::Default::new();
+    let mut multiline = String::new();
+
     loop {
         mutex_shell.lock().unwrap().scan_path();
 
-        let mut cwd = env::current_dir().expect("Error in current_dir()");
-        if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
-            cwd = PathBuf::from("~").join(strip_home);
-        }
-
-        interface.set_prompt(&format!(
-            "\n\x01{prefix}\x02{text}\x01{suffix}\x02 {git}\n> ",
-            prefix = style.prefix(),
-            text = cwd.display(),
-            suffix = style.suffix(),
-            git = git::prompt(),
-        ))?;
+        let cond = prompt::Condition::new(release_mode);
+        let prompt_display = if multiline.is_empty() {
+            prompt.main_display(&cond)
+        } else {
+            prompt.continue_display(&cond)
+        };
+        interface.set_prompt(&prompt_display)?;
 
         let readline = interface.read_line()?;
 
@@ -170,8 +162,16 @@ fn main() -> io::Result<()> {
             process::check_background_jobs(&mut shell);
             match readline {
                 ReadResult::Input(line) => {
-                    shell.run_str(&line);
                     let trimed = line.trim();
+
+                    if trimed.ends_with("\\") == true {
+                        multiline.push_str(&trimed[..trimed.len() - 1]);
+                    } else {
+                        multiline.push_str(&trimed);
+                        shell.run_str(&multiline);
+                        multiline = String::new();
+                    }
+
                     if trimed.len() != 0 {
                         interface.add_history_unique(trimed.to_owned());
                     }

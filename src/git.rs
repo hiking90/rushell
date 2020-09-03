@@ -1,31 +1,47 @@
 use std::process::Command;
 use crate::shell::Shell;
 
-
 pub struct Git {
-    branch: String,
-    staged: bool,
-    unstaged: bool,
-    untracked: bool,
+    pub rootdir: String,
+    pub branch: String,
+    pub staged: bool,
+    pub unstaged: bool,
+    pub untracked: bool,
 }
 
 impl Git {
-    pub fn status() -> Result<Git, Box<dyn std::error::Error>> {
+    pub fn new() -> Option<Git> {
         let output = Command::new("git")
             .arg("status")
             .arg("--porcelain")
             .arg("-b")
-            .output()?;
+            .output().ok()?;
 
-        let output = std::str::from_utf8(&output.stdout)?;
+        let status_output = std::str::from_utf8(&output.stdout).ok()?;
+
+        let output = Command::new("git")
+            .arg("rev-parse")
+            .arg("--show-toplevel")
+            .output().ok()?;
+        let rootdir_output = std::str::from_utf8(&output.stdout).ok()?;
+
         let mut res = Git {
+            rootdir: "".to_owned(),
             branch: "".to_owned(),
             staged: false,
             unstaged: false,
             untracked: false,
         };
 
-        for line in output.lines() {
+        for line in rootdir_output.lines() {
+            let line = line.trim();
+            if line.is_empty() == false {
+                res.rootdir = line.to_string();
+                break;
+            }
+        }
+
+        for line in status_output.lines() {
             if line.starts_with("## ") {
                 let start = &line[3..];
                 if let Some(end) = start.find(".") {
@@ -47,21 +63,12 @@ impl Git {
             }
         }
 
-        Ok(res)
-    }
-}
-
-pub fn prompt() -> String {
-    if let Ok(git) = Git::status() {
-        if git.branch.len() != 0 {
-            return format!("on  {} [{}{}]",
-                git.branch,
-                if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
-                if git.untracked {"?"} else {""},
-            );
+        if res.rootdir.is_empty() {
+            None
+        } else {
+            Some(res)
         }
     }
-    "".to_string()
 }
 
 pub fn aliases(shell: &mut Shell) {

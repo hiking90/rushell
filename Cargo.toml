@@ -20,3 +20,4 @@ structopt = "0"
 phf = { version = "0", features = ["macros"] }
 lazy_static = "1"
 glob = "0"
+whoami = "0"
