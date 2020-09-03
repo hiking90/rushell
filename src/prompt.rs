@@ -3,7 +3,7 @@ use std::env;
 use std::path::PathBuf;
 use whoami;
 use crate::git;
-use ansi_term::Color;
+use crate::theme;
 
 pub struct Condition {
     pub user: String,
@@ -49,10 +49,11 @@ impl Default {
 
 impl Prompt for Default {
     fn main_display(&mut self, condition: &Condition) -> String {
-        let style = if condition.release_mode == true {
-            Color::Fixed(87).bold()
+        let theme = theme::default_theme();
+        let path_style = if condition.release_mode == true {
+            theme.path[theme::PathColor::ReadWrite as usize]
         } else {
-            Color::Red.bold()
+            theme.path[theme::PathColor::ReadOnly as usize]
         };
 
         let mut cwd = utils::current_working_dir();
@@ -61,10 +62,20 @@ impl Prompt for Default {
         }
 
         let git_prompt = if let Some(git) = &condition.git {
-            format!("on  {} [{}{}]",
+            let git_style = if git.unstaged {
+                theme.git[theme::GitColor::Unstaged as usize]
+            } else if git.staged {
+                theme.git[theme::GitColor::Staged as usize]
+            } else {
+                theme.git[theme::GitColor::Committed as usize]
+            };
+
+            format!("on \x01{} {} [{}{}]{}\x02",
+                git_style.prefix(),
                 git.branch,
                 if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
                 if git.untracked {"?"} else {""},
+                git_style.suffix(),
             )
         } else {
             "".to_string()
@@ -73,15 +84,20 @@ impl Prompt for Default {
         self.last_prompt = cwd.display().to_string();
         self.last_prompt.push_str(&git_prompt);
 
-        format!("\n\x01{prefix}\x02{text}\x01{suffix}\x02 {git}\n> ",
+        let style = theme.prompt;
+
+        format!("\n\x01{path_prefix}{path}{path_suffix} {git}\n {prefix}>{suffix}\x02 ",
+            path_prefix = path_style.prefix(),
+            path = cwd.display(),
+            path_suffix = path_style.suffix(),
+            git = git_prompt,
             prefix = style.prefix(),
-            text = cwd.display(),
             suffix = style.suffix(),
-            git = git_prompt)
+        )
     }
 
     fn continue_display(&mut self, _condition: &Condition) -> String {
-        String::from("% ")
+        String::from(">> ")
     }
 
 }

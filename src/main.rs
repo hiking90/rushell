@@ -95,6 +95,8 @@ fn main() -> io::Result<()> {
     interface.bind_sequence("\x1b\x1b[D", linefeed::Command::from_str("backward-word"));
     interface.bind_sequence("\x1b\x1b[C", linefeed::Command::from_str("forward-word"));
 
+    interface.set_report_signal(linefeed::Signal::Interrupt, true);
+
     let conf_dir = homedir.join(".config/rushell/");
     let history_file = conf_dir.join("history");
 
@@ -176,7 +178,16 @@ fn main() -> io::Result<()> {
                         interface.add_history_unique(trimed.to_owned());
                     }
                 }
-                _ => break,
+                ReadResult::Signal(sig) => {
+                    if sig == linefeed::Signal::Interrupt {
+                        interface.cancel_read_line()?;
+                    }
+                    multiline = String::new();
+                }
+                _ => {
+                    writeln!(shell, "BYE BYE!")?;
+                    break;
+                }
             }
 
             interface.save_history(&history_file).unwrap_or_else(|err| {
