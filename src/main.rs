@@ -99,6 +99,11 @@ fn main() -> io::Result<()> {
 
     let conf_dir = homedir.join(".config/rushell/");
     let history_file = conf_dir.join("history");
+    let init_file = conf_dir.join("init.sh");
+
+    if init_file.exists() == false {
+        fs::File::create(&init_file).ok();
+    }
 
     if fs::create_dir_all(&conf_dir).is_ok() {
         let _ = interface.load_history(&history_file);
@@ -127,6 +132,8 @@ fn main() -> io::Result<()> {
         shell.run_str("alias ls=\"ls -Gp\"");
 
         git::aliases(&mut shell);
+
+        shell.run_file(init_file).ok();
 
         let stdout = std::fs::File::create("/dev/stdout").unwrap();
         shell.set_interactive(unistd::isatty(stdout.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
