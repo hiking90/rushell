@@ -52,12 +52,7 @@ impl Folder {
 
     fn retain_executable(&mut self) {
         self.entries.retain(|entry|
-            match entry.metadata() {
-                Ok(meta) => {
-                    meta.is_file() && (meta.permissions().mode() & 0o111) != 0
-                }
-                Err(_) => { false }
-            }
+            is_executable(&entry)
         );
     }
 }
@@ -212,19 +207,13 @@ impl ShellCompleter {
             if let Some(path) = self.to_path(path) {
                 if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
                     let entries = folder.entries.iter()
-                        .filter(|entry|
-                            match entry.metadata() {
-                                Ok(meta) => {
-                                    meta.is_dir() || (meta.permissions().mode() & 0o111) != 0
-                                }
-                                Err(_) => { false }
-                            }
-                        )
+                        .filter(|entry| is_executable(entry))
                         // Drop Unix hidden file that is started with "."
                         .filter(|entry| entry.file_name().to_str().map_or(false, |name| !name.starts_with(".")))
                         .map(|entry| entry.clone())
                         .collect();
 
+                    println!("{:?}", entries);
                     return self.folder_to_completion(&entries, base_dir, fname)
                 }
             } else {
@@ -374,5 +363,27 @@ fn split_path(path: &str) -> (Option<&str>, &str) {
     match path.rfind(is_separator) {
         Some(pos) => (Some(&path[..pos + 1]), &path[pos + 1..]),
         None => (None, path)
+    }
+}
+
+fn is_executable(entry: &fs::DirEntry) -> bool {
+    if let Ok(file_type) = entry.file_type() {
+        if file_type.is_symlink() {
+            // follow symlink and check if it is executable.
+            if let Ok(path) = entry.path().canonicalize() {
+                if let Ok(meta) = path.metadata() {
+                    if (meta.permissions().mode() & 0o111) != 0 {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    match entry.metadata() {
+        Ok(meta) => {
+            meta.is_file() && (meta.permissions().mode() & 0o111) != 0
+        }
+        Err(_) => { false }
     }
 }
