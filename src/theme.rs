@@ -13,15 +13,21 @@ pub enum GitColor {
     Max
 }
 
+pub enum PromptColor {
+    Main = 0,
+    Continue = 1,
+    Max
+}
+
 pub struct Theme {
-    pub prompt: Style,
+    pub prompt: [Style; PromptColor::Max as usize],
     pub path: [Style; PathColor::Max as usize],
     pub git: [Style; GitColor::Max as usize],
 }
 
 pub fn default_theme() -> Theme {
     Theme {
-        prompt: Color::Fixed(10).bold(),
+        prompt: [Color::Fixed(10).bold(), Color::Fixed(13).bold()],
         path: [Color::Fixed(87).bold(), Color::Red.bold()],
         git: [Color::Fixed(196).bold(), Color::Fixed(11).bold(), Color::Fixed(82).bold()],
     }

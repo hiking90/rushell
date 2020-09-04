@@ -232,14 +232,12 @@ impl ShellCompleter {
             }
         }
 
-        let mut res = Vec::new();
+        let mut completions = HashMap::new();
 
         let shell = self.mutex_shell.lock().unwrap();
         for key in shell.commands().keys() {
-            if key.starts_with(&command) &&
-                INTERNAL_COMMANDS.get(command.as_str()).is_none() == true &&
-                shell.lookup_alias(command.as_str()).is_none() == true {
-                res.push(linefeed::Completion {
+            if key.starts_with(&command) {
+                completions.insert(key.to_owned(), linefeed::Completion {
                     completion: format!("{}{}", prefix, key),
                     display: Some(key.to_owned()),
                     suffix: Suffix::Default,
@@ -247,9 +245,10 @@ impl ShellCompleter {
             }
         }
 
+        // Check internal commands
         for key in INTERNAL_COMMANDS.keys() {
             if key.starts_with(&command) {
-                res.push(linefeed::Completion {
+                completions.insert(key.to_string(), linefeed::Completion {
                     completion: format!("{}{}", prefix, key),
                     display: Some(key.to_string()),
                     suffix: Suffix::Default,
@@ -257,17 +256,31 @@ impl ShellCompleter {
             }
         }
 
-        for (key, _) in shell.aliases() {
-            if key.starts_with(&command) {
-                res.push(linefeed::Completion {
+        // Check alias commands
+        shell.aliases().filter(|(key, _v)| key.starts_with(&command)).for_each(|(key, _v)|
+            match completions.insert(key.to_string(),
+                linefeed::Completion {
                     completion: format!("{}{}", prefix, key),
                     display: Some(key.to_string()),
                     suffix: Suffix::Default,
-                });
+                }) {
+                _ => (),
             }
-        }
+        );
 
-        res
+        // Check user defined functions
+        shell.functions().iter().filter(|(key, _v)| key.starts_with(&command)).for_each(|(key, _v)|
+            match completions.insert(key.to_string(),
+                linefeed::Completion {
+                    completion: format!("{}{}", prefix, key),
+                    display: Some(key.to_string()),
+                    suffix: Suffix::Default,
+                }) {
+                _ => (),
+            }
+        );
+
+        completions.into_iter().map(|(_key, value)| value).collect()
     }
 
     fn folder_to_completion(&self, entries: &Vec<Arc<fs::DirEntry>>, base_dir: Option<&str>, fname: &str) -> Vec<linefeed::Completion> {

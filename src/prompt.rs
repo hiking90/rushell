@@ -1,11 +1,15 @@
-use crate::utils;
 use std::env;
 use std::path::PathBuf;
+use std::fs::File;
+use std::io::Read;
 use whoami;
-use crate::git;
-use crate::theme;
+use crate::{git, theme, shell, utils};
+use nix::unistd::{close, pipe};
+use std::os::unix::io::FromRawFd;
+
 
 pub struct Condition {
+    pub prompt: String,
     pub user: String,
     pub host: String,
     pub git: Option<git::Git>,
@@ -16,6 +20,7 @@ pub struct Condition {
 impl Condition {
     pub fn new(release_mode: bool) -> Condition {
         Condition {
+            prompt: utils::var_os("PS1", " ❯ "),
             user: whoami::username(),
             host: whoami::hostname(),
             git: git::Git::new(),
@@ -26,8 +31,14 @@ impl Condition {
 }
 
 pub trait Prompt {
-    fn main_display(&mut self, condition: &Condition) -> String;
-    fn continue_display(&mut self, condition: &Condition) -> String;
+    fn main_display(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String;
+    fn continue_display(&mut self) -> String {
+        let style = theme::default_theme().prompt[theme::PromptColor::Continue as usize];
+        format!("\x01{}>>{}\x02 ",
+            style.prefix(),
+            style.suffix(),
+        )
+    }
 }
 
 
@@ -48,7 +59,7 @@ impl Default {
 }
 
 impl Prompt for Default {
-    fn main_display(&mut self, condition: &Condition) -> String {
+    fn main_display(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
         let theme = theme::default_theme();
         let path_style = if condition.release_mode == true {
             theme.path[theme::PathColor::ReadWrite as usize]
@@ -84,20 +95,47 @@ impl Prompt for Default {
         self.last_prompt = cwd.display().to_string();
         self.last_prompt.push_str(&git_prompt);
 
-        let style = theme.prompt;
+        let style = theme::default_theme().prompt[theme::PromptColor::Main as usize];
 
-        format!("\n\x01{path_prefix}{path}{path_suffix} {git}\n {prefix}>{suffix}\x02 ",
+        format!("\n\x01{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
             path_prefix = path_style.prefix(),
             path = cwd.display(),
             path_suffix = path_style.suffix(),
             git = git_prompt,
+            prompt = condition.prompt,
             prefix = style.prefix(),
             suffix = style.suffix(),
         )
     }
+}
 
-    fn continue_display(&mut self, _condition: &Condition) -> String {
-        String::from(">> ")
+pub struct PromptCommand {
+    command: String,
+}
+
+impl PromptCommand {
+    pub fn new() -> Option<PromptCommand> {
+        if let Some(command) = env::var_os("PROMPT_COMMAND") {
+            Some(PromptCommand{
+                command: command.into_string().ok()?,
+            })
+        } else {
+            None
+        }
     }
+}
 
+impl Prompt for PromptCommand {
+    fn main_display(&mut self, shell: &mut shell::Shell, _condition: &Condition) -> String {
+        let (pipe_in, pipe_out) = pipe().expect("failed to create a pipe for PROMPT_COMMAND");
+        let _status = shell.run_str_with_stdio(&self.command, 0, pipe_out, 2);
+        close(pipe_out).ok();
+
+        let mut prompt = String::new();
+        unsafe {
+            let mut file = File::from_raw_fd(pipe_in);
+            file.read_to_string(&mut prompt).ok();
+        }
+        prompt
+    }
 }

@@ -35,7 +35,7 @@ mod variable;
 mod git;
 mod prompt;
 
-use crate::prompt::Prompt;
+// use crate::prompt::Prompt;
 use crate::variable::Value;
 use linefeed::{Interface, ReadResult};
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
@@ -61,31 +61,31 @@ fn main() -> io::Result<()> {
     let mut iter = std::env::args();
 
     iter.next();    // Skip command name.
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--release" => release_mode = true,
-            "-c" => {
-                let mut shell = mutex_shell.lock().unwrap();
-                let mut command = String::new();
-                while let Some(arg) = iter.next() {
-                    command.push_str(&format!(" {}", arg));
+
+    if let Ok(mut shell) = mutex_shell.lock() {
+        shell.scan_path();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--release" => release_mode = true,
+                "-c" => {
+                    let mut command = String::new();
+                    while let Some(arg) = iter.next() {
+                        command.push_str(&format!(" {}", arg));
+                    }
+                    let status = match shell.run_str(&command) {
+                        process::ExitStatus::ExitedWith(status) => status,
+                        _ => 1,
+                    };
+                    std::process::exit(status);
                 }
-                shell.scan_path();
-                let status = match shell.run_str(&command) {
-                    process::ExitStatus::ExitedWith(status) => status,
-                    _ => 1,
-                };
-                std::process::exit(status);
-            }
-            _ => {
-                let mut shell = mutex_shell.lock().unwrap();
-                shell.scan_path();
-                shell.set_script_name(&arg);
-                let status = match shell.run_file(PathBuf::from(arg)) {
-                    Ok(process::ExitStatus::ExitedWith(status)) => status,
-                    _ => 1,
-                };
-                std::process::exit(status);
+                _ => {
+                    shell.set_script_name(&arg);
+                    let status = match shell.run_file(PathBuf::from(arg)) {
+                        Ok(process::ExitStatus::ExitedWith(status)) => status,
+                        _ => 1,
+                    };
+                    std::process::exit(status);
+                }
             }
         }
     }
@@ -144,19 +144,22 @@ fn main() -> io::Result<()> {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
-    let mut prompt = prompt::Default::new();
+    let mut prompt = if let Some(prompt) = prompt::PromptCommand::new() {
+        Box::new(prompt) as Box<dyn prompt::Prompt>
+    } else {
+        Box::new(prompt::Default::new()) as Box<dyn prompt::Prompt>
+    };
     let mut multiline = String::new();
 
     loop {
-        mutex_shell.lock().unwrap().scan_path();
-
-        let cond = prompt::Condition::new(release_mode);
-        let prompt_display = if multiline.is_empty() {
-            prompt.main_display(&cond)
-        } else {
-            prompt.continue_display(&cond)
-        };
-        interface.set_prompt(&prompt_display)?;
+        if let Ok(mut shell) = mutex_shell.lock() {
+            let prompt_display = if multiline.is_empty() {
+                prompt.main_display(&mut shell, &prompt::Condition::new(release_mode))
+            } else {
+                prompt.continue_display()
+            };
+            interface.set_prompt(&prompt_display)?;
+        }
 
         let readline = interface.read_line()?;
 

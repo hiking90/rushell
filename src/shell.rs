@@ -32,6 +32,8 @@ pub struct Shell {
     /// `$!`
     last_back_job: Option<Arc<Job>>,
 
+    /// Functions
+    functions: HashMap<String, Value>,
     /// Global scope.
     global: Frame,
     /// Local scopes (variables declared with `local').
@@ -76,6 +78,7 @@ impl Shell {
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
+            functions: HashMap::new(),
             global: Frame::new(),
             frames: Vec::new(),
             errexit: false,
@@ -187,15 +190,21 @@ impl Shell {
 
         frame.set(key, value.clone());
 
+        if let Value::Function(ref _f) = value {
+            self.functions.insert(key.to_owned(), value.clone());
+        }
+
         if !is_local && key == "PATH" {
             // $PATH is being updated. Reload directories.
             if let Value::String(ref _path) = value {
-                // self.path_table().scan(path);
+                self.scan_path();
             }
         }
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
+        self.functions.remove(key);
+
         if let Some(var) = self.current_frame_mut().remove(key) {
             return Some(var);
         }
@@ -378,5 +387,9 @@ impl Shell {
 
     pub fn scan_path(&mut self) {
         self.commands_scanner.scan_path();
+    }
+
+    pub fn functions(&self) -> &HashMap<String, Value> {
+        &self.functions
     }
 }
