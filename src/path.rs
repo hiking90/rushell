@@ -3,15 +3,13 @@ use crate::builtins::INTERNAL_COMMANDS;
 use linefeed::complete::{Completer, Suffix};
 use linefeed::prompter::Prompter;
 use linefeed::terminal::Terminal;
-use crate::utils;
-use crate::shell;
+use crate::{utils, shell, variable};
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap, btree_map};
 use std::path::{Path, PathBuf, is_separator, MAIN_SEPARATOR};
 use std::fs;
 use std::io;
-use std::env;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -57,31 +55,23 @@ impl Folder {
     }
 }
 
-pub type Commands = HashMap<String, Arc<fs::DirEntry>>;
 
 pub struct CommandScanner {
     /// Key is command name and value is absolute path to the executable.
     paths: Vec<Folder>,
-    commands: Arc<Commands>,
 }
 
 impl CommandScanner {
     pub fn new() -> CommandScanner {
         CommandScanner {
             paths: Vec::new(),
-            commands: Arc::new(Commands::new()),
         }
-    }
-
-    pub fn scan_path(&mut self) {
-        env::var_os("PATH").map(|path|
-            path.into_string().map(|path| self.scan(&path))
-        );
     }
 
     /// Scans bin directories and caches all files in them. Call this method
     /// when you update `$PATH`!
-    pub fn scan(&mut self, path: &str) -> bool {
+    pub fn scan(&mut self) -> bool {
+        let path = utils::var_os("PATH", "");
         let mut paths = Vec::<Folder>::new();
         let mut updated = false;
 
@@ -111,25 +101,11 @@ impl CommandScanner {
 
         self.paths = paths;
 
-        if updated == true {
-            let mut commands = Commands::new();
-
-            for path in self.paths.iter().rev() {
-                for entry in path.entries.iter() {
-                    if let Ok(filename) = entry.file_name().into_string() {
-                        commands.insert(filename, Arc::clone(entry));
-                    }
-                }
-            }
-
-            self.commands = Arc::new(commands);
-        }
-
         updated
     }
 
-    pub fn commands(&self) -> Arc<Commands> {
-        Arc::clone(&self.commands)
+    pub fn folders(&self) -> &Vec<Folder> {
+        &self.paths
     }
 }
 
@@ -184,15 +160,6 @@ impl ShellCompleter {
         }
     }
 
-    fn to_path(&self, path: &str) -> Option<PathBuf> {
-        let path = PathBuf::from(path);
-        if let Ok(striped) = path.strip_prefix(TILDE) {
-            utils::home_dir().join(striped).canonicalize().ok()
-        } else {
-            path.canonicalize().ok()
-        }
-    }
-
     pub fn complete_command(&self, command: &str) -> Vec<linefeed::Completion> {
         let mut command = String::from(command);
         let mut prefix = "";
@@ -202,9 +169,10 @@ impl ShellCompleter {
             command = command.trim_start_matches("`").to_owned();
         }
 
+        // If there is a specific path, look for command in the path.
         let (base_dir, fname) = split_path(&command);
         if let Some(path) = base_dir {
-            if let Some(path) = self.to_path(path) {
+            if let Some(path) = to_path(path) {
                 if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
                     let entries = folder.entries.iter()
                         .filter(|entry| is_executable(entry))
@@ -213,7 +181,6 @@ impl ShellCompleter {
                         .map(|entry| entry.clone())
                         .collect();
 
-                    println!("{:?}", entries);
                     return self.folder_to_completion(&entries, base_dir, fname)
                 }
             } else {
@@ -221,23 +188,13 @@ impl ShellCompleter {
             }
         }
 
-        let mut completions = HashMap::new();
+        let mut completions = Vec::new();
 
-        let shell = self.mutex_shell.lock().unwrap();
-        for key in shell.commands().keys() {
-            if key.starts_with(&command) {
-                completions.insert(key.to_owned(), linefeed::Completion {
-                    completion: format!("{}{}", prefix, key),
-                    display: Some(key.to_owned()),
-                    suffix: Suffix::Default,
-                });
-            }
-        }
+        let mut shell = self.mutex_shell.lock().unwrap();
 
-        // Check internal commands
-        for key in INTERNAL_COMMANDS.keys() {
+        for (key, _value) in shell.commands().filter(&command) {
             if key.starts_with(&command) {
-                completions.insert(key.to_string(), linefeed::Completion {
+                completions.push(linefeed::Completion {
                     completion: format!("{}{}", prefix, key),
                     display: Some(key.to_string()),
                     suffix: Suffix::Default,
@@ -245,31 +202,7 @@ impl ShellCompleter {
             }
         }
 
-        // Check alias commands
-        shell.aliases().filter(|(key, _v)| key.starts_with(&command)).for_each(|(key, _v)|
-            match completions.insert(key.to_string(),
-                linefeed::Completion {
-                    completion: format!("{}{}", prefix, key),
-                    display: Some(key.to_string()),
-                    suffix: Suffix::Default,
-                }) {
-                _ => (),
-            }
-        );
-
-        // Check user defined functions
-        shell.functions().iter().filter(|(key, _v)| key.starts_with(&command)).for_each(|(key, _v)|
-            match completions.insert(key.to_string(),
-                linefeed::Completion {
-                    completion: format!("{}{}", prefix, key),
-                    display: Some(key.to_string()),
-                    suffix: Suffix::Default,
-                }) {
-                _ => (),
-            }
-        );
-
-        completions.into_iter().map(|(_key, value)| value).collect()
+        completions
     }
 
     fn folder_to_completion(&self, entries: &Vec<Arc<fs::DirEntry>>, base_dir: Option<&str>, fname: &str) -> Vec<linefeed::Completion> {
@@ -308,7 +241,7 @@ impl ShellCompleter {
 
     pub fn complete_folder(&self, path: &str) -> Vec<linefeed::Completion> {
         let (base_dir, fname) = split_path(path);
-        if let Some(path) = self.to_path(base_dir.unwrap_or(".")) {
+        if let Some(path) = to_path(base_dir.unwrap_or(".")) {
             if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
                 return self.folder_to_completion(&folder.entries, base_dir, fname)
             }
@@ -385,5 +318,92 @@ fn is_executable(entry: &fs::DirEntry) -> bool {
             meta.is_file() && (meta.permissions().mode() & 0o111) != 0
         }
         Err(_) => { false }
+    }
+}
+
+fn to_path(path: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(path);
+    if let Ok(striped) = path.strip_prefix(TILDE) {
+        utils::home_dir().join(striped).canonicalize().ok()
+    } else {
+        path.canonicalize().ok()
+    }
+}
+
+pub enum CommandValue {
+    External(Arc<fs::DirEntry>),
+    Internal,
+    Alias,
+    Function,
+}
+
+fn command_value_discriminant_value(command_value: &CommandValue) -> u32 {
+    match command_value {
+        CommandValue::External(_e) => 0,
+        CommandValue::Internal => 1,
+        CommandValue::Alias => 2,
+        CommandValue::Function => 3,
+    }
+}
+
+pub struct CommandMap {
+    commands: BTreeMap<String, CommandValue>,
+    external_commands: HashMap<String, Arc<fs::DirEntry>>,
+}
+
+impl CommandMap {
+    pub fn build(shell: &shell::Shell) -> CommandMap {
+        let mut external_commands = HashMap::new();
+        let mut commands = BTreeMap::new();
+
+        for path in shell.path_folders().iter().rev() {
+            for entry in path.entries.iter() {
+                if let Ok(filename) = entry.file_name().into_string() {
+                    commands.insert(filename.to_owned(), CommandValue::External(Arc::clone(entry)));
+                    external_commands.insert(filename, Arc::clone(entry));
+                }
+            }
+        }
+
+        // Check internal commands
+        INTERNAL_COMMANDS.keys().for_each(|key|
+            match commands.insert(key.to_string(), CommandValue::Internal) { _ => () }
+        );
+
+        // Check alias commands
+        shell.aliases().for_each(|(key, _v)|
+            match commands.insert(key.to_string(), CommandValue::Alias) { _ => () }
+        );
+
+        // Check user defined functions
+        shell.variables().for_each(|(key, v)|
+            if let Some(value) = v.value() {
+                if let variable::Value::Function(ref _f) = value {
+                    match commands.insert(key.to_string(), CommandValue::Function) { _ => () }
+                }
+            }
+        );
+
+        CommandMap {
+            commands: commands,
+            external_commands: external_commands,
+        }
+    }
+
+    pub fn insert(&mut self, key:&str, value: CommandValue) {
+        if let Some(has) = self.commands.get(key) {
+            if command_value_discriminant_value(&has) >= command_value_discriminant_value(&value) {
+                return
+            }
+        }
+        self.commands.insert(key.to_owned(), value);
+    }
+
+    pub fn filter(&self, command: &str) -> btree_map::Range<String, CommandValue> {
+        self.commands.range(command.to_owned()..)
+    }
+
+    pub fn get_external(&self, command: &str) -> Option<&Arc<fs::DirEntry>> {
+        self.external_commands.get(command)
     }
 }

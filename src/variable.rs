@@ -1,5 +1,5 @@
 use crate::parser;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map};
 use std::sync::Arc;
 
 /// A variable value.
@@ -74,6 +74,10 @@ impl Frame {
         Frame {
             vars: HashMap::new(),
         }
+    }
+
+    pub fn iter(&self) -> hash_map::Iter<String, Arc<Variable>> {
+        self.vars.iter()
     }
 
     pub fn define(&mut self, key: &str) {

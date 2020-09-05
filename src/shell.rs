@@ -7,7 +7,7 @@ use crate::path;
 use nix;
 use nix::sys::termios::{tcgetattr, Termios};
 use nix::unistd::{getpid, Pid};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::fmt;
 use std::fs::File;
 use std::io;
@@ -32,8 +32,6 @@ pub struct Shell {
     /// `$!`
     last_back_job: Option<Arc<Job>>,
 
-    /// Functions
-    functions: HashMap<String, Value>,
     /// Global scope.
     global: Frame,
     /// Local scopes (variables declared with `local').
@@ -66,6 +64,8 @@ pub struct Shell {
 
     linefeed: Option<Arc<Interface<DefaultTerminal>>>,
     commands_scanner: path::CommandScanner,
+
+    commands: Option<path::CommandMap>,
 }
 
 impl Shell {
@@ -78,7 +78,6 @@ impl Shell {
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
-            functions: HashMap::new(),
             global: Frame::new(),
             frames: Vec::new(),
             errexit: false,
@@ -93,6 +92,7 @@ impl Shell {
             last_back_job: None,
             linefeed: None,
             commands_scanner: path::CommandScanner::new(),
+            commands: None,
         }
     }
 
@@ -191,25 +191,32 @@ impl Shell {
         frame.set(key, value.clone());
 
         if let Value::Function(ref _f) = value {
-            self.functions.insert(key.to_owned(), value.clone());
+            if let Some(mut commands) = self.commands.take() {
+                commands.insert(key, path::CommandValue::Function);
+                self.commands = Some(commands);
+            }
         }
 
-        if !is_local && key == "PATH" {
+        if is_local == false && key == "PATH" {
             // $PATH is being updated. Reload directories.
             if let Value::String(ref _path) = value {
-                self.scan_path();
+                self.scan_commands();
             }
         }
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
-        self.functions.remove(key);
-
         if let Some(var) = self.current_frame_mut().remove(key) {
+            if let Value::Function(ref _f) = var.value().as_ref().unwrap() {
+                self.commands = None;
+            }
             return Some(var);
         }
 
         if let Some(var) = self.global.remove(key) {
+            if let Value::Function(ref _f) = var.value().as_ref().unwrap() {
+                self.commands = None;
+            }
             return Some(var);
         }
 
@@ -249,6 +256,10 @@ impl Shell {
 
     pub fn add_alias(&mut self, name: &str, body: String) {
         self.aliases.insert(name.to_string(), body);
+        if let Some(mut commands) = self.commands.take() {
+            commands.insert(name, path::CommandValue::Alias);
+            self.commands = Some(commands);
+        }
     }
 
     pub fn lookup_alias(&self, alias: &str) -> Option<String> {
@@ -270,8 +281,15 @@ impl Shell {
         })
     }
 
-    pub fn commands(&self) -> Arc<path::Commands> {
-        self.commands_scanner.commands()
+    pub fn commands(&mut self) -> &path::CommandMap {
+        if self.commands.is_none() {
+            self.commands = Some(path::CommandMap::build(self));
+        }
+        &self.commands.as_ref().unwrap()
+    }
+
+    pub fn path_folders(&self) -> &Vec<path::Folder> {
+        self.commands_scanner.folders()
     }
 
     pub fn jobs(&self) -> &HashMap<JobId, Arc<Job>> {
@@ -385,11 +403,13 @@ impl Shell {
         self.linefeed.as_ref().map(|linefeed| Arc::clone(linefeed))
     }
 
-    pub fn scan_path(&mut self) {
-        self.commands_scanner.scan_path();
+    pub fn scan_commands(&mut self) {
+        if self.commands_scanner.scan() == true {
+            self.commands = None;
+        }
     }
 
-    pub fn functions(&self) -> &HashMap<String, Value> {
-        &self.functions
+    pub fn variables(&self) -> hash_map::Iter<String, Arc<Variable>> {
+        self.global.iter()
     }
 }

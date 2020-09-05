@@ -63,7 +63,7 @@ fn main() -> io::Result<()> {
     iter.next();    // Skip command name.
 
     if let Ok(mut shell) = mutex_shell.lock() {
-        shell.scan_path();
+        shell.scan_commands();
         while let Some(arg) = iter.next() {
             match arg.as_str() {
                 "--release" => release_mode = true,
