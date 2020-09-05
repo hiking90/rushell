@@ -197,12 +197,12 @@ impl Shell {
             }
         }
 
-        if is_local == false && key == "PATH" {
-            // $PATH is being updated. Reload directories.
-            if let Value::String(ref _path) = value {
-                self.scan_commands();
-            }
-        }
+        // if is_local == false && key == "PATH" {
+        //     // $PATH is being updated. Reload directories.
+        //     if let Value::String(ref _path) = value {
+        //         self.scan_commands();
+        //     }
+        // }
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {

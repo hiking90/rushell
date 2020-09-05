@@ -160,6 +160,7 @@ fn main() -> io::Result<()> {
 
     loop {
         if let Ok(mut shell) = mutex_shell.lock() {
+            shell.scan_commands();
             let prompt_display = if multiline.is_empty() {
                 prompt.main_display(&mut shell, &prompt::Condition::new(release_mode))
             } else {

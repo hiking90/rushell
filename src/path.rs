@@ -176,7 +176,7 @@ impl ShellCompleter {
             if let Some(path) = to_path(path) {
                 if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
                     let entries = folder.entries.iter()
-                        .filter(|entry| is_executable(entry))
+                        .filter(|entry| is_executable(entry) || entry.metadata().map_or(false, |meta| meta.is_dir()))
                         // Drop Unix hidden file that is started with "."
                         .filter(|entry| entry.file_name().to_str().map_or(false, |name| !name.starts_with(".")))
                         .map(|entry| entry.clone())
@@ -367,23 +367,30 @@ fn to_path(path: &str) -> Option<PathBuf> {
 }
 
 pub enum CommandValue {
-    External(Arc<fs::DirEntry>),
-    Internal,
-    Alias,
-    Function,
+    External(Arc<fs::DirEntry>),    // External command
+    Builtin,                        // builtin command
+    Alias,                          // User defined alias command
+    Function,                       // User defined function
 }
 
+// Assign int value to CommandValue element to compare the priority.
 fn command_value_discriminant_value(command_value: &CommandValue) -> u32 {
     match command_value {
         CommandValue::External(_e) => 0,
-        CommandValue::Internal => 1,
+        CommandValue::Builtin => 1,
         CommandValue::Alias => 2,
         CommandValue::Function => 3,
     }
 }
 
 pub struct CommandMap {
+    // BTreeMap is used to cache all commands, because it keeps the order of command.
     commands: BTreeMap<String, CommandValue>,
+    // It is necessary for shell parser.
+    // A user can define an alias that has same name with external command.
+    // Ex) alias ls="ls --color"
+    // BTreeMap only keep alias name and remove the external information of "ls".
+    // But, shell parser needs to get the external information to execute "ls --color" command.
     external_commands: HashMap<String, Arc<fs::DirEntry>>,
 }
 
@@ -403,7 +410,7 @@ impl CommandMap {
 
         // Check internal commands
         INTERNAL_COMMANDS.keys().for_each(|key|
-            match commands.insert(key.to_string(), CommandValue::Internal) { _ => () }
+            match commands.insert(key.to_string(), CommandValue::Builtin) { _ => () }
         );
 
         // Check alias commands
@@ -426,6 +433,8 @@ impl CommandMap {
         }
     }
 
+    /// Insert a key and value into BTreeMap.
+    /// This function compares the value priority if the Map already has a value.
     pub fn insert(&mut self, key:&str, value: CommandValue) {
         if let Some(has) = self.commands.get(key) {
             if command_value_discriminant_value(&has) >= command_value_discriminant_value(&value) {
