@@ -166,7 +166,8 @@ impl ShellCompleter {
 
         if command.starts_with("`") {
             prefix = "`";
-            command = command.trim_start_matches("`").to_owned();
+            command.remove(0);
+            // command = command.trim_start_matches("`").to_owned();
         }
 
         // If there is a specific path, look for command in the path.
@@ -249,6 +250,39 @@ impl ShellCompleter {
 
         Vec::new()
     }
+
+    pub fn complete_variable(&self, word: &str) -> Vec<linefeed::Completion> {
+        let mut word = String::from(word);
+        let mut res = Vec::new();
+
+        let prefix = if word.starts_with("${") {
+            "${"
+        } else {
+            "$"
+        };
+        word.replace_range(0..prefix.len(), "");
+
+        let shell = self.mutex_shell.lock().unwrap();
+
+        shell.variables().for_each(|(key, v)|
+            if let Some(value) = v.value() {
+                match value {
+                    variable::Value::Function(ref _f) => {}
+                    _ => {
+                        if key.starts_with(&word) {
+                            res.push(linefeed::Completion {
+                                completion: format!("{}{}", prefix, key),
+                                display: Some(key.to_string()),
+                                suffix: Suffix::Default,
+                            });
+                        }
+                    }
+                }
+            }
+        );
+
+        res
+    }
 }
 
 impl<Term: Terminal> Completer<Term> for ShellCompleter {
@@ -271,6 +305,8 @@ impl<Term: Terminal> Completer<Term> for ShellCompleter {
         let mut res = if input.is_empty() || input.ends_with("&") || input.ends_with("|") ||
             input.ends_with(";") || input.ends_with("`") {
             self.complete_command(word)
+        } else if word.starts_with("$") {
+            self.complete_variable(word)
         } else {
             self.complete_folder(word)
         };
