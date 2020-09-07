@@ -26,7 +26,7 @@ mod macros;
 mod builtins;
 mod eval;
 mod expand;
-mod path;
+mod completer;
 mod process;
 mod shell;
 mod theme;
@@ -51,7 +51,7 @@ const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/l
 fn main() -> io::Result<()> {
     let homedir = utils::home_dir();
 
-    // let command_scanner = Arc::new(Mutex::new(path::CommandScanner::new()));
+    // let command_scanner = Arc::new(Mutex::new(completer::CommandScanner::new()));
     let mutex_shell = Arc::new(Mutex::new(shell::Shell::new()));
     // let mut shell = shell::Shell::new(command_scanner.clone());
 
@@ -109,9 +109,9 @@ fn main() -> io::Result<()> {
         let _ = interface.load_history(&history_file);
     }
 
-    let folder_scanner = Arc::new(Mutex::new(path::FolderScanner::new()));
+    let folder_scanner = Arc::new(Mutex::new(completer::FolderScanner::new()));
 
-    interface.set_completer(Arc::new(path::ShellCompleter::new(mutex_shell.clone(), folder_scanner.clone())));
+    interface.set_completer(Arc::new(completer::ShellCompleter::new(mutex_shell.clone(), folder_scanner.clone())));
 
     if let Ok(mut shell) = mutex_shell.lock() {
         shell.set_linefeed(interface.clone());

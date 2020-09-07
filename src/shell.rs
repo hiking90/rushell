@@ -3,7 +3,7 @@ use crate::linefeed::{DefaultTerminal, Interface};
 use crate::parser;
 use crate::process::{ExitStatus, Job, JobId, ProcessState};
 use crate::variable::{Frame, Value, Variable};
-use crate::path;
+use crate::completer;
 use nix;
 use nix::sys::termios::{tcgetattr, Termios};
 use nix::unistd::{getpid, Pid};
@@ -63,9 +63,9 @@ pub struct Shell {
     pub last_fore_job: Option<Arc<Job>>,
 
     linefeed: Option<Arc<Interface<DefaultTerminal>>>,
-    commands_scanner: path::CommandScanner,
+    commands_scanner: completer::CommandScanner,
 
-    commands: Option<path::CommandMap>,
+    commands: Option<completer::CommandMap>,
 }
 
 impl Shell {
@@ -91,7 +91,7 @@ impl Shell {
             last_fore_job: None,
             last_back_job: None,
             linefeed: None,
-            commands_scanner: path::CommandScanner::new(),
+            commands_scanner: completer::CommandScanner::new(),
             commands: None,
         }
     }
@@ -192,7 +192,7 @@ impl Shell {
 
         if let Value::Function(ref _f) = value {
             if let Some(mut commands) = self.commands.take() {
-                commands.insert(key, path::CommandValue::Function);
+                commands.insert(key, completer::CommandValue::Function);
                 self.commands = Some(commands);
             }
         }
@@ -257,7 +257,7 @@ impl Shell {
     pub fn add_alias(&mut self, name: &str, body: String) {
         self.aliases.insert(name.to_string(), body);
         if let Some(mut commands) = self.commands.take() {
-            commands.insert(name, path::CommandValue::Alias);
+            commands.insert(name, completer::CommandValue::Alias);
             self.commands = Some(commands);
         }
     }
@@ -281,14 +281,14 @@ impl Shell {
         })
     }
 
-    pub fn commands(&mut self) -> &path::CommandMap {
+    pub fn commands(&mut self) -> &completer::CommandMap {
         if self.commands.is_none() {
-            self.commands = Some(path::CommandMap::build(self));
+            self.commands = Some(completer::CommandMap::build(self));
         }
         &self.commands.as_ref().unwrap()
     }
 
-    pub fn path_folders(&self) -> &Vec<path::Folder> {
+    pub fn path_folders(&self) -> &Vec<completer::Folder> {
         self.commands_scanner.folders()
     }
 
