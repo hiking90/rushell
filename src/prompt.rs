@@ -1,11 +1,13 @@
 use std::env;
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{PathBuf, MAIN_SEPARATOR};
 use std::fs::File;
 use std::io::Read;
 use whoami;
 use crate::{git, theme, shell, utils};
 use nix::unistd::{close, pipe};
 use std::os::unix::io::FromRawFd;
+use ansi_term::{Style, Color};
 
 
 pub struct Condition {
@@ -42,8 +44,105 @@ pub trait Prompt {
 }
 
 
-pub struct Powerline {
+pub struct PowerLine {
+}
 
+impl PowerLine {
+    pub fn new() -> PowerLine {
+        PowerLine {
+        }
+    }
+
+    fn arrow_format(&self, style: Style, next: Option<Style>) -> String {
+        let arrow_style = theme::Theme::arrow_style(style, next);
+
+        format!("{arrow_prefix}\u{E0B0}{arrow_suffix}",
+            arrow_prefix = arrow_style.prefix(),
+            arrow_suffix = arrow_style.suffix(),
+        )
+    }
+}
+
+impl Prompt for PowerLine {
+    fn main_display(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
+        let theme = theme::nord_theme();
+
+        let mut cwd = utils::current_working_dir();
+        let mut git_style = None;
+
+        let git = if let Some(git) = &condition.git {
+            let mut git_root = PathBuf::from(&git.rootdir);
+
+            if cwd.starts_with(&git_root) {
+                let stripped = cwd.strip_prefix(&git_root).unwrap().to_path_buf();
+                cwd = git_root.clone();
+                git_root = stripped;
+            }
+
+            let style = if git.unstaged {
+                theme.repo_dirty
+            } else if git.staged {
+                theme.repo_staged
+            } else {
+                theme.repo
+            };
+
+            git_style = Some(style);
+
+            let (path_style, path, arrow) = if git_root == PathBuf::new() {
+                (None, "".to_owned(), "".to_owned())
+            } else {
+                (Some(theme.path),
+                 format!("{} {} {}", theme.path.prefix(), git_root.display(), theme.path.suffix()),
+                 self.arrow_format(theme.path_basename, None))
+            };
+
+            format!("{} \u{E0A0} {}{} {}{}{}{}",
+                style.prefix(),
+                if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
+                if git.untracked {"?"} else {""},
+                style.suffix(),
+                self.arrow_format(style, path_style),
+                path,
+                arrow,
+            )
+        } else {
+            "".to_string()
+        };
+
+        if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
+            cwd = PathBuf::from("~").join(strip_home);
+        }
+
+        let basename = cwd.file_name().unwrap_or(OsStr::new("")).to_str().unwrap_or("").to_string();
+        cwd.pop();
+
+        let mut path = String::new();
+        cwd.iter().for_each(|some| {
+            path.push(some.to_str().unwrap_or("").chars().next().unwrap_or('?'));
+            if path.ends_with(MAIN_SEPARATOR) == false {
+                path.push(MAIN_SEPARATOR);
+            }
+        });
+
+        let path = format!("{path_prefix} {path}{path_suffix}",
+            path_prefix = theme.path.prefix(),
+            path = path,
+            path_suffix = theme.path.suffix(),
+        );
+
+        let base = format!("{base_prefix}{basename} {base_suffix}",
+            base_prefix = theme.path_basename.prefix(),
+            basename = basename,
+            base_suffix = theme.path_basename.suffix(),
+        );
+
+        let arrow = self.arrow_format(theme.path_basename, git_style);
+
+        format!("\x01{}{}{}{}\x02 ",
+            path, base, arrow, git,
+        )
+    }
 }
 
 pub struct Default {
@@ -64,7 +163,7 @@ impl Prompt for Default {
         let path_style = if condition.release_mode == true {
             theme.path
         } else {
-            theme.path_nowrite
+            theme.path_debug
         };
 
         let mut cwd = utils::current_working_dir();
@@ -92,14 +191,18 @@ impl Prompt for Default {
             "".to_string()
         };
 
-        self.last_prompt = cwd.display().to_string();
+        let mut path = cwd.display().to_string();
+        if path.ends_with(MAIN_SEPARATOR) {
+            path.pop();
+        }
+        self.last_prompt = path.clone();
         self.last_prompt.push_str(&git_prompt);
 
         let style = theme::default_theme().prompt;
 
         format!("\n\x01{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
             path_prefix = path_style.prefix(),
-            path = cwd.display(),
+            path = path,
             path_suffix = path_style.suffix(),
             git = git_prompt,
             prompt = condition.prompt,

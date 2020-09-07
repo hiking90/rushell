@@ -154,7 +154,8 @@ fn main() -> io::Result<()> {
     let mut prompt = if let Some(prompt) = prompt::PromptCommand::new() {
         Box::new(prompt) as Box<dyn prompt::Prompt>
     } else {
-        Box::new(prompt::Default::new()) as Box<dyn prompt::Prompt>
+        // Box::new(prompt::Default::new()) as Box<dyn prompt::Prompt>
+        Box::new(prompt::PowerLine::new()) as Box<dyn prompt::Prompt>
     };
     let mut multiline = String::new();
 

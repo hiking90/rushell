@@ -5,6 +5,7 @@ pub struct Theme {
     pub prompt_continue: Style,
 
     pub path: Style,
+    pub path_debug: Style,
     pub path_basename: Style,
     pub path_nowrite: Style,
     pub path_nowrite_basename: Style,
@@ -18,13 +19,30 @@ pub struct Theme {
     pub username: Style,
 }
 
+impl Theme {
+    pub fn arrow_style(style: Style, connected: Option<Style>) -> Style {
+        let mut res = if let Some(background) = style.background {
+            background.normal()
+        } else {
+            Color::Black.normal()
+        };
+
+        if let Some(connected) = connected {
+            res = res.on(connected.background.unwrap_or(Color::Black));
+        }
+
+        res
+    }
+}
+
 pub fn default_theme() -> Theme {
     let base0d = Color::RGB(0xEB, 0xCB, 0x8B);
     Theme {
-        prompt: Color::Fixed(10).bold(),
+        prompt: Color::Purple.bold(),
         prompt_continue: Color::Fixed(13).bold(),
 
         path: Color::Blue.normal(),
+        path_debug: Color::Fixed(83).normal(),
         path_basename: Color::Blue.bold(),
         path_nowrite: Color::Red.normal(),
         path_nowrite_basename: Color::Red.bold(),
@@ -51,6 +69,7 @@ pub fn nord_theme() -> Theme {
         prompt_continue: Color::Fixed(13).on(Color::Black).bold(),
 
         path: base05.clone().on(base02.clone()),
+        path_debug: Color::Fixed(83).normal(),
         path_basename: Color::RGB(0xEC, 0xEF, 0xF4).clone().on(base02.clone()).bold(),
         path_nowrite: base08.clone().on(base02.clone()),
         path_nowrite_basename: base08.clone().on(base02.clone()).bold(),
