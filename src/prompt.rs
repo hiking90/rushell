@@ -33,7 +33,7 @@ impl Condition {
 pub trait Prompt {
     fn main_display(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String;
     fn continue_display(&mut self) -> String {
-        let style = theme::default_theme().prompt[theme::PromptColor::Continue as usize];
+        let style = theme::default_theme().prompt_continue;
         format!("\x01{}>>{}\x02 ",
             style.prefix(),
             style.suffix(),
@@ -62,9 +62,9 @@ impl Prompt for Default {
     fn main_display(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
         let theme = theme::default_theme();
         let path_style = if condition.release_mode == true {
-            theme.path[theme::PathColor::ReadWrite as usize]
+            theme.path
         } else {
-            theme.path[theme::PathColor::ReadOnly as usize]
+            theme.path_nowrite
         };
 
         let mut cwd = utils::current_working_dir();
@@ -74,11 +74,11 @@ impl Prompt for Default {
 
         let git_prompt = if let Some(git) = &condition.git {
             let git_style = if git.unstaged {
-                theme.git[theme::GitColor::Unstaged as usize]
+                theme.repo_dirty
             } else if git.staged {
-                theme.git[theme::GitColor::Staged as usize]
+                theme.repo_staged
             } else {
-                theme.git[theme::GitColor::Committed as usize]
+                theme.repo
             };
 
             format!("on \x01{} {} [{}{}]{}\x02",
@@ -95,7 +95,7 @@ impl Prompt for Default {
         self.last_prompt = cwd.display().to_string();
         self.last_prompt.push_str(&git_prompt);
 
-        let style = theme::default_theme().prompt[theme::PromptColor::Main as usize];
+        let style = theme::default_theme().prompt;
 
         format!("\n\x01{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
             path_prefix = path_style.prefix(),
