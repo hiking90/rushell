@@ -84,19 +84,19 @@ pub fn nord_theme() -> Theme {
         prompt: Color::Fixed(10).on(Color::Black).bold(),
         prompt_continue: Color::Fixed(13).on(Color::Black).bold(),
 
-        path: base05.clone().on(base02.clone()),
+        path: base05.on(base02),
         path_debug: Color::Fixed(83).normal(),
-        path_basename: Color::RGB(0xEC, 0xEF, 0xF4).clone().on(base02.clone()).bold(),
-        path_nowrite: base08.clone().on(base02.clone()),
-        path_nowrite_basename: base08.clone().on(base02.clone()).bold(),
+        path_basename: Color::RGB(0xEC, 0xEF, 0xF4).on(base02).bold(),
+        path_nowrite: base08.on(base02),
+        path_nowrite_basename: base08.on(base02.clone()).bold(),
 
-        repo: base00.clone().on(Color::RGB(0xA3, 0xBE, 0x8C)),
-        repo_work_tree: base00.clone().on(base02.clone()).bold(),
-        repo_dirty: base00.clone().on(Color::RGB(0xBF, 0x61, 0x6A)),
-        repo_staged: base00.clone().on(base0d.clone()),
+        repo: base00.on(Color::RGB(0xA3, 0xBE, 0x8C)),
+        repo_work_tree: base00.on(base02.clone()).bold(),
+        repo_dirty: base00.on(Color::RGB(0xBF, 0x61, 0x6A)),
+        repo_staged: base00.on(base0d.clone()),
 
-        hostname: base0d.clone().on(base02.clone()),
-        username: base0d.clone().on(base02.clone()).bold(),
+        hostname: Color::RGB(0x25, 0x5e, 0x87).on(base05),
+        username: Color::RGB(0x25, 0x5e, 0x87).on(base05).bold(),
     }
 }
 

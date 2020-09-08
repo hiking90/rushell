@@ -21,10 +21,13 @@ pub struct Condition {
 
 impl Condition {
     pub fn new() -> Condition {
+        let hostname = whoami::hostname();
+        let splitted: Vec<&str> = hostname.split('.').collect();
+
         Condition {
             prompt: utils::var_os("PS1", " ❯ "),
             user: whoami::username(),
-            host: whoami::hostname(),
+            host: splitted.first().unwrap().to_string(),
             git: git::Git::new(),
             remote_login: env::var_os("SSH_CONNECTION").is_some(),
         }
@@ -111,6 +114,20 @@ impl Prompt for PowerLine {
             String::new()
         };
 
+        let host = if condition.remote_login {
+            format!("{} {}{}{}@{} {}{}",
+                theme.username.prefix(),
+                condition.user,
+                theme.username.suffix(),
+                theme.hostname.prefix(),
+                condition.host,
+                theme.hostname.suffix(),
+                self.arrow_format(theme.hostname, Some(theme.path)),
+                )
+        } else {
+            String::new()
+        };
+
         if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
             cwd = PathBuf::from("~").join(strip_home);
         }
@@ -144,8 +161,8 @@ impl Prompt for PowerLine {
 
         let arrow = self.arrow_format(theme.path_basename, git_style);
 
-        format!("\x01{}{}{}{}\x02 ",
-            path, base, arrow, git,
+        format!("\x01{}{}{}{}{}\x02 ",
+            host, path, base, arrow, git,
         )
     }
 }
@@ -172,6 +189,15 @@ impl Prompt for Default {
         if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
             cwd = PathBuf::from("~").join(strip_home);
         }
+
+        let host_prompt = if condition.remote_login {
+            format!("{}{}{}{}@{}{} ",
+                theme.username.prefix(), condition.user, theme.username.suffix(),
+                theme.hostname.prefix(), condition.host, theme.hostname.suffix(),
+            )
+        } else {
+            String::new()
+        };
 
         let git_prompt = if let Some(git) = &condition.git {
             let git_style = if git.unstaged {
@@ -203,7 +229,8 @@ impl Prompt for Default {
         let path_style = theme.path(readonly);
         let style = theme::default_theme().prompt;
 
-        format!("\n\x01{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
+        format!("\n\x01{host}{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
+            host = host_prompt,
             path_prefix = path_style.prefix(),
             path = path,
             path_suffix = path_style.suffix(),
