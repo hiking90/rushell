@@ -95,8 +95,8 @@ pub fn nord_theme() -> Theme {
         repo_dirty: base00.on(Color::RGB(0xBF, 0x61, 0x6A)),
         repo_staged: base00.on(base0d.clone()),
 
-        hostname: Color::RGB(0x25, 0x5e, 0x87).on(base05),
-        username: Color::RGB(0x25, 0x5e, 0x87).on(base05).bold(),
+        hostname: Color::RGB(0x25, 0x5e, 0x87).on(Color::RGB(0xcc, 0xcc, 0xcc)),
+        username: Color::RGB(0x25, 0x5e, 0x87).on(Color::RGB(0xcc, 0xcc, 0xcc)).bold(),
     }
 }
 
