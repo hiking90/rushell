@@ -154,8 +154,11 @@ fn main() -> io::Result<()> {
     let mut prompt = if let Some(prompt) = prompt::PromptCommand::new() {
         Box::new(prompt) as Box<dyn prompt::Prompt>
     } else {
-        // Box::new(prompt::Default::new()) as Box<dyn prompt::Prompt>
-        Box::new(prompt::PowerLine::new()) as Box<dyn prompt::Prompt>
+        if release_mode {
+            Box::new(prompt::Default::new()) as Box<dyn prompt::Prompt>
+        } else {
+            Box::new(prompt::PowerLine::new()) as Box<dyn prompt::Prompt>
+        }
     };
     let mut multiline = String::new();
 
@@ -163,7 +166,7 @@ fn main() -> io::Result<()> {
         if let Ok(mut shell) = mutex_shell.lock() {
             shell.scan_commands();
             let prompt_display = if multiline.is_empty() {
-                prompt.main_display(&mut shell, &prompt::Condition::new(release_mode))
+                prompt.main_display(&mut shell, &prompt::Condition::new())
             } else {
                 prompt.continue_display()
             };

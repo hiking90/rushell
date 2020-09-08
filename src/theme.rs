@@ -20,7 +20,7 @@ pub struct Theme {
 }
 
 impl Theme {
-    pub fn arrow_style(style: Style, connected: Option<Style>) -> Style {
+    pub fn arrow(style: Style, connected: Option<Style>) -> Style {
         let mut res = if let Some(background) = style.background {
             background.normal()
         } else {
@@ -33,6 +33,22 @@ impl Theme {
 
         res
     }
+
+    pub fn path(&self, readonly: bool) -> Style {
+        if readonly {
+            self.path_nowrite
+        } else {
+            self.path
+        }
+    }
+
+    pub fn basename(&self, readonly: bool) -> Style {
+        if readonly {
+            self.path_nowrite_basename
+        } else {
+            self.path_basename
+        }
+    }
 }
 
 pub fn default_theme() -> Theme {
@@ -44,8 +60,8 @@ pub fn default_theme() -> Theme {
         path: Color::Blue.normal(),
         path_debug: Color::Fixed(83).normal(),
         path_basename: Color::Blue.bold(),
-        path_nowrite: Color::Red.normal(),
-        path_nowrite_basename: Color::Red.bold(),
+        path_nowrite: Color::Yellow.normal(),
+        path_nowrite_basename: Color::Yellow.bold(),
 
         repo: Color::Green.normal(),
         repo_work_tree: Color::Fixed(15).normal(),

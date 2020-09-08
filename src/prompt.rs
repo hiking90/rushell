@@ -1,13 +1,14 @@
 use std::env;
 use std::ffi::OsStr;
-use std::path::{PathBuf, MAIN_SEPARATOR};
+use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 use std::fs::File;
 use std::io::Read;
+use std::os::unix::io::FromRawFd;
+use std::os::unix::fs::MetadataExt;
 use whoami;
 use crate::{git, theme, shell, utils};
-use nix::unistd::{close, pipe};
-use std::os::unix::io::FromRawFd;
-use ansi_term::{Style, Color};
+use nix::unistd::{close, pipe, Uid};
+use ansi_term::{Style};
 
 
 pub struct Condition {
@@ -16,18 +17,16 @@ pub struct Condition {
     pub host: String,
     pub git: Option<git::Git>,
     pub remote_login: bool,
-    pub release_mode: bool,
 }
 
 impl Condition {
-    pub fn new(release_mode: bool) -> Condition {
+    pub fn new() -> Condition {
         Condition {
             prompt: utils::var_os("PS1", " ❯ "),
             user: whoami::username(),
             host: whoami::hostname(),
             git: git::Git::new(),
             remote_login: env::var_os("SSH_CONNECTION").is_some(),
-            release_mode: release_mode,
         }
     }
 }
@@ -54,7 +53,7 @@ impl PowerLine {
     }
 
     fn arrow_format(&self, style: Style, next: Option<Style>) -> String {
-        let arrow_style = theme::Theme::arrow_style(style, next);
+        let arrow_style = theme::Theme::arrow(style, next);
 
         format!("{arrow_prefix}\u{E0B0}{arrow_suffix}",
             arrow_prefix = arrow_style.prefix(),
@@ -69,6 +68,8 @@ impl Prompt for PowerLine {
 
         let mut cwd = utils::current_working_dir();
         let mut git_style = None;
+
+        let readonly = is_readonly(&cwd);
 
         let git = if let Some(git) = &condition.git {
             let mut git_root = PathBuf::from(&git.rootdir);
@@ -90,7 +91,7 @@ impl Prompt for PowerLine {
             git_style = Some(style);
 
             let (path_style, path, arrow) = if git_root == PathBuf::new() {
-                (None, "".to_owned(), "".to_owned())
+                (None, String::new(), String::new())
             } else {
                 (Some(theme.path),
                  format!("{} {} {}", theme.path.prefix(), git_root.display(), theme.path.suffix()),
@@ -107,7 +108,7 @@ impl Prompt for PowerLine {
                 arrow,
             )
         } else {
-            "".to_string()
+            String::new()
         };
 
         if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
@@ -125,16 +126,20 @@ impl Prompt for PowerLine {
             }
         });
 
+        let style = theme.path(readonly);
+
         let path = format!("{path_prefix} {path}{path_suffix}",
-            path_prefix = theme.path.prefix(),
+            path_prefix = style.prefix(),
             path = path,
-            path_suffix = theme.path.suffix(),
+            path_suffix = style.suffix(),
         );
 
+        let style = theme.basename(readonly);
+
         let base = format!("{base_prefix}{basename} {base_suffix}",
-            base_prefix = theme.path_basename.prefix(),
+            base_prefix = style.prefix(),
             basename = basename,
-            base_suffix = theme.path_basename.suffix(),
+            base_suffix = style.suffix(),
         );
 
         let arrow = self.arrow_format(theme.path_basename, git_style);
@@ -160,13 +165,10 @@ impl Default {
 impl Prompt for Default {
     fn main_display(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
         let theme = theme::default_theme();
-        let path_style = if condition.release_mode == true {
-            theme.path
-        } else {
-            theme.path_debug
-        };
 
         let mut cwd = utils::current_working_dir();
+        let readonly = is_readonly(&cwd);
+
         if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
             cwd = PathBuf::from("~").join(strip_home);
         }
@@ -180,7 +182,7 @@ impl Prompt for Default {
                 theme.repo
             };
 
-            format!("on \x01{} {} [{}{}]{}\x02",
+            format!("on \x01{}\u{E0A0} {} [{}{}]{}\x02",
                 git_style.prefix(),
                 git.branch,
                 if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
@@ -198,6 +200,7 @@ impl Prompt for Default {
         self.last_prompt = path.clone();
         self.last_prompt.push_str(&git_prompt);
 
+        let path_style = theme.path(readonly);
         let style = theme::default_theme().prompt;
 
         format!("\n\x01{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
@@ -241,4 +244,16 @@ impl Prompt for PromptCommand {
         }
         prompt
     }
+}
+
+fn is_readonly(path: &Path) -> bool {
+    if let Ok(metadata) = path.metadata() {
+        if metadata.uid() == Uid::current().as_raw() {
+            return (metadata.mode() & 0o200) == 0;
+        } else {
+            return (metadata.mode() & 0o022) == 0;
+        }
+    }
+
+    false
 }

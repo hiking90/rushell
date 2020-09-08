@@ -1,6 +1,20 @@
 use std::process::Command;
 use crate::shell::Shell;
 
+struct Parser {
+    pattern: &'static str,
+    parser: Box<dyn Fn(&str, &mut Git)>,
+}
+
+impl Parser {
+    fn new(pattern: &'static str, parser: Box<dyn Fn(&str, &mut Git)>) -> Parser {
+        Parser{
+            pattern: pattern,
+            parser: parser,
+        }
+    }
+}
+
 pub struct Git {
     pub rootdir: String,
     pub branch: String,
@@ -13,7 +27,7 @@ impl Git {
     pub fn new() -> Option<Git> {
         let output = Command::new("git")
             .arg("status")
-            .arg("--porcelain")
+            .arg("--porcelain=2")
             .arg("-b")
             .output().ok()?;
 
@@ -41,26 +55,37 @@ impl Git {
             }
         }
 
-        for line in status_output.lines() {
-            if line.starts_with("## ") {
-                let start = &line[3..];
-                if let Some(end) = start.find(".") {
-                    res.branch = start[..end].to_owned();
-                }
-            } else if line.starts_with("?? ") {
-                res.untracked = true;
-            } else {
-                let mut chars = line.chars();
-                let staged = chars.next() != Some(' ');
-                let unstaged = chars.next() != Some(' ');
-
-                if res.staged == false && staged == true {
-                    res.staged = true;
-                }
-                if res.unstaged == false && unstaged == true {
-                    res.unstaged = true;
-                }
+        let tracked_closure = Box::new(|line: &str, res: &mut Git| {
+            let mut chars = line.chars();
+            let staged = chars.next() != Some('.');
+            let unstaged = chars.next() != Some('.');
+            if res.staged == false && staged == true {
+                res.staged = true;
             }
+            if res.unstaged == false && unstaged == true {
+                res.unstaged = true;
+            }
+        });
+
+        let mut parser = [
+            Parser::new("# branch.oid ", Box::new(|line: &str, res: &mut Git| {
+                res.branch = format!("({})", line[..8].to_owned());
+            })),
+            Parser::new("# branch.head ", Box::new(|line: &str, res: &mut Git| {
+                if line.starts_with("(") == false {
+                    res.branch = line.to_string();
+                }
+            })),
+            Parser::new("? ", Box::new(|_line: &str, res: &mut Git| { res.untracked = true; })),
+            Parser::new("1 ", tracked_closure.clone()),
+            Parser::new("2 ", tracked_closure),
+        ];
+
+        for line in status_output.lines() {
+            parser.iter_mut()
+                .for_each(|parser| if line.starts_with(parser.pattern) {
+                    (parser.parser)(&line[parser.pattern.len()..], &mut res)
+                });
         }
 
         if res.rootdir.is_empty() {
