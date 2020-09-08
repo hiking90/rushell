@@ -2,10 +2,11 @@
 //  Misc.
 //
 WHITESPACE = _{
-    " " | "\t" | "\r"
-    // A trailing backslash at the end of a line.
-    | "\\\n"
+    (" " | "\t" | "\r") ~ silent*
 }
+
+// A trailing backslash at the end of a line.
+silent = _{ "\\\n" }
 
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_char = _{
@@ -73,7 +74,7 @@ span = _{
 }
 escaped_char = { "\\" ~ ANY }
 unescaped_char = { word_char }
-literal_span = ${ (escaped_char | unescaped_char)+ }
+literal_span = ${ (silent | escaped_char | unescaped_char)+ }
 tilde_span = { "~" ~ username? }
 any_string_span = { "*" }
 any_char_span = { "?" }
@@ -161,7 +162,7 @@ args = { word_or_redirect* }
 assignments = { assignment* }
 simple_command = { assignments ~ argv0 ~ args }
 
-heredoc = { "<<" ~ PUSH(heredoc_marker) }
+heredoc = { "<<" ~ PUSH(heredoc_marker) ~ newline* }
 newline = {
     // Entering a here document. Use `PEEK_ALL` instead of `PEEK` to
     // prevent a panic on an empty stack. `(PEEK_ALL)` succeeds if
@@ -183,8 +184,7 @@ newline = {
 
 normal_newline = { "\n" }
 heredoc_marker = ${ word_char+ }
-heredoc_body = { heredoc_line* }
-heredoc_line = { !(PEEK) ~ (word *) ~ "\n" }
+heredoc_body = { (!(PEEK) ~ ANY)* }
 
 //
 //  If Command

@@ -632,6 +632,9 @@ impl ShellParser {
         for ch in pair.as_str().chars() {
             if escaped {
                 escaped = false;
+                if ch == '\n' { // Skip "\\\n"
+                    continue;
+                }
                 if let Some(escaped_chars) = escaped_chars {
                     if !escaped_chars.contains(ch) {
                         s.push('\\');
