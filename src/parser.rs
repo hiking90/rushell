@@ -762,7 +762,7 @@ impl ShellParser {
                         match span_in_quote.as_rule() {
                             Rule::literal_in_double_quoted_span => {
                                 spans.push(Span::Literal(
-                                    self.visit_escape_sequences(span_in_quote, Some("\"`$")),
+                                    self.visit_escape_sequences(span_in_quote, Some("\"`$\\")),
                                 ));
                             }
                             Rule::backtick_span => {

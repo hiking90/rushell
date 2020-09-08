@@ -373,7 +373,8 @@ impl Shell {
         stdout: RawFd,
         stderr: RawFd,
     ) -> ExitStatus {
-        match parser::parse(script) {
+        let script = script.replace("\\\n", "");
+        match parser::parse(&script) {
             Ok(ast) => eval(self, &ast, stdin, stdout, stderr),
             Err(parser::ParseError::Empty) => {
                 // Just ignore.
