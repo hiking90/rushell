@@ -2,6 +2,7 @@ use ansi_term::Colour;
 use pest::iterators::Pair;
 use pest::Parser;
 use std::os::unix::io::RawFd;
+use crate::utils;
 
 #[derive(Parser)]
 #[grammar = "shell.pest"]
@@ -626,8 +627,9 @@ impl ShellParser {
     }
 
     // `a\b\$cd' -> `echo ab$cd'
-    fn visit_escape_sequences(&mut self, pair: Pair<Rule>, escaped_chars: Option<&str>) -> String {
+    fn visit_escape_sequences(&mut self, pair: Pair<Rule>, escaped_chars: &str) -> String {
         let mut s = String::new();
+
         let mut escaped = false;
         for ch in pair.as_str().chars() {
             if escaped {
@@ -635,16 +637,40 @@ impl ShellParser {
                 if ch == '\n' { // Skip "\\\n"
                     continue;
                 }
-                if let Some(escaped_chars) = escaped_chars {
-                    if !escaped_chars.contains(ch) {
-                        s.push('\\');
-                    }
+                if !escaped_chars.contains(ch) {
+                    s.push('\\');
                 }
                 s.push(ch);
             } else if ch == '\\' {
                 escaped = true;
             } else {
                 s.push(ch);
+            }
+        }
+
+        s
+    }
+
+    fn visite_literal_span (&mut self, pair: Pair<Rule>) -> String {
+        let mut s = String::new();
+
+        for ch in pair.into_inner() {
+            match ch.as_rule() {
+                Rule::escaped_char => {
+                    let lit_ch = ch.as_str().chars().nth(1).unwrap();
+                    s.push(lit_ch)
+                }
+                Rule::unescaped_char => {
+                    let lit_ch = ch.as_str().chars().nth(0).unwrap();
+                    s.push(lit_ch)
+                }
+                Rule::tilde_char => {
+                    let mut chars = ch.as_str().chars();
+                    s.push(chars.nth(0).unwrap());
+                    s.push_str(utils::home_dir().to_str().unwrap());
+                }
+                Rule::silent_char => {}
+                _ => unreachable!(),
             }
         }
 
@@ -720,8 +746,7 @@ impl ShellParser {
         Command::Cond(expr)
     }
 
-    // word = ${ assign_like_prefix? ~ (tilde_span | span) ~ span* }
-    // assign_like_prefix = { assign_like_prefix_var_name ~ "=" }
+    // word = ${ (tilde_span | span) ~ span* }
     // span = _{
     //     double_quoted_span
     //     | single_quoted_span
@@ -758,14 +783,14 @@ impl ShellParser {
                     spans.push(Span::LiteralChars(chars));
                 }
                 Rule::literal_span if !literal_chars => {
-                    spans.push(Span::Literal(self.visit_escape_sequences(span, None)));
+                    spans.push(Span::Literal(self.visite_literal_span(span)));
                 }
                 Rule::double_quoted_span => {
                     for span_in_quote in span.into_inner() {
                         match span_in_quote.as_rule() {
                             Rule::literal_in_double_quoted_span => {
                                 spans.push(Span::Literal(
-                                    self.visit_escape_sequences(span_in_quote, Some("\"`$\\")),
+                                    self.visit_escape_sequences(span_in_quote, "\"`$\\"),
                                 ));
                             }
                             Rule::backtick_span => {
@@ -815,18 +840,6 @@ impl ShellParser {
                 }
                 Rule::any_char_span => {
                     spans.push(Span::AnyChar { quoted: false });
-                }
-                // A word like "--prefix=~/usr". We expand `~` into Span::Tilde.
-                // This feature is not in the POSIX spec, but it's pretty useful
-                // and implemented in popular shells like bash and zsh.
-                Rule::assign_like_prefix => {
-                    let mut inner = span.into_inner();
-                    let var_name = inner.next().unwrap();
-                    // We don't have to handle escape sequences since it does
-                    // not contain bachslashes by definition (shell.pest).
-                    let mut s = var_name.as_str().to_owned();
-                    s.push('=');
-                    spans.push(Span::Literal(s));
                 }
                 _ => {
                     println!("unimpl: {:?}", span);
@@ -884,7 +897,8 @@ impl ShellParser {
     }
 
     // assignment = { var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
-    // index = { ("[" ~ expr ~ "]")? }
+    // index = { ("[" ~ (expr | index_all) ~ "]")? }
+    // index_all = { "*" | "@" }
     // initializer = { array_initializer | string_initializer }
     // string_initializer = { word }
     // array_initializer = { ("(" ~ word* ~ ")") }
@@ -1304,7 +1318,16 @@ impl ShellParser {
             if Rule::heredoc_body == newline_inner.as_rule() {
                 let lines: Vec<Vec<Word>> = newline_inner
                     .into_inner()
-                    .map(|line| line.into_inner().map(|w| self.visit_word(w)).collect())
+                    .map(|line| line.into_inner()
+                        .map(|w|
+                            match w.as_rule() {
+                                Rule::word => self.visit_word(w),
+                                Rule::heredoc_word => {
+                                    Word(vec![Span::Literal(w.as_str().to_owned())])
+                                }
+                                _ => unreachable!()
+                            }
+                        ).collect())
                     .collect();
                 self.heredocs.push(HereDoc(lines));
             }
@@ -2927,11 +2950,9 @@ pub fn test_assign_like_prefix() {
                         argv: vec![
                             Word(vec![Span::Literal("./configure".into())]),
                             Word(vec![
-                                Span::Literal("--prefix=".into()),
-                                Span::Tilde(None),
-                                Span::Literal("/usr".into()),
+                                Span::Literal(format!("--prefix={}/usr", utils::home_dir().display()).into())
                             ]),
-                            Word(vec![Span::Literal("invalid=~".into())]),
+                            Word(vec![Span::Literal(format!("invalid={}", utils::home_dir().display()).into())]),
                         ],
                         redirects: vec![],
                         assignments: vec![],
@@ -3271,6 +3292,27 @@ pub fn test_cond_ex() {
 }
 
 #[test]
+pub fn test_export_empty() {
+    assert_eq!(
+        parse("export PATH="),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "export PATH=".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("export"), lit!("PATH=")],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        })
+    );
+}
+
+#[test]
 pub fn test_heredoc() {
     assert_eq!(
         parse(concat!(
@@ -3308,6 +3350,36 @@ pub fn test_heredoc() {
                     }]
                 }],
             },]
+        })
+    );
+
+    assert_eq!(
+        parse(concat!(
+            "cat <<EOF\n",
+            "lunch <product_name>-<build_variant>\n",
+            "EOF\n",
+        )),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "cat <<EOF".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("cat")],
+                        redirects: vec![
+                            Redirection {
+                                fd: 0,
+                                direction: RedirectionDirection::Input,
+                                target: RedirectionType::HereDoc(HereDoc(vec![
+                                    vec![lit!("lunch"), lit!("<"), lit!("product_name"), lit!(">"), lit!("-"), lit!("<"), lit!("build_variant"), lit!(">")]
+                                ])),
+                            }
+                        ],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
         })
     );
 }

@@ -2,11 +2,11 @@
 //  Misc.
 //
 WHITESPACE = _{
-    (" " | "\t" | "\r") ~ silent*
+    (" " | "\t" | "\r") ~ silent_char*
 }
 
 // A trailing backslash at the end of a line.
-silent = _{ "\\\n" }
+silent_char = _{ "\\\n" }
 
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_char = _{
@@ -22,17 +22,18 @@ var_name_chars = _{
 
 /// --prefix=~/usr
 //  ^^^^^^^^
-assign_like_prefix_chars = _{
-    "-" | "_" | ASCII_ALPHANUMERIC
-}
+//assign_like_prefix_chars = _{
+//    "-" | "_" | ASCII_ALPHANUMERIC
+//}
 
 wsnl = _{ (WHITESPACE | COMMENT | newline)+ }
 var_name = ${ var_name_chars+ }
-assign_like_prefix_var_name = ${ assign_like_prefix_chars+ }
+// assign_like_prefix_var_name = ${ assign_like_prefix_chars+ }
 username = ${ (!("/") ~ word_char)+ }
 special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | "-" | ASCII_DIGIT }
 
-index = { ("[" ~ expr ~ "]")? }
+index = { ("[" ~ (expr | index_all) ~ "]")? }
+index_all = { "*" | "@" }
 num = ${ ASCII_DIGIT+ }
 
 //
@@ -57,8 +58,7 @@ primary = _{ num | ("$"? ~ var_name) | param_ex_span |  ("(" ~ expr ~ ")") }
 //
 //  Word
 //
-word = ${ assign_like_prefix? ~ (tilde_span | span) ~ span* }
-assign_like_prefix = { assign_like_prefix_var_name ~ "=" }
+word = ${ (tilde_span | span) ~ span* }
 span = _{
     double_quoted_span
     | single_quoted_span
@@ -74,7 +74,8 @@ span = _{
 }
 escaped_char = { "\\" ~ ANY }
 unescaped_char = { word_char }
-literal_span = ${ (silent | escaped_char | unescaped_char)+ }
+tilde_char = { (":" | "=") ~ "~" }
+literal_span = ${ (tilde_char | silent_char | escaped_char | unescaped_char)+ }
 tilde_span = { "~" ~ username? }
 any_string_span = { "*" }
 any_char_span = { "?" }
@@ -121,7 +122,7 @@ literal_in_single_quoted_span = ${ ( "\\'"  | !("\'") ~ ANY | WHITESPACE)+ }
 //
 initializer = { array_initializer | string_initializer | empty_initializer }
 string_initializer = { word }
-array_initializer = { ("(" ~ word* ~ ")") }
+array_initializer = !{ ("(" ~ word* ~ ")") }
 empty_initializer = { WHITESPACE* }
 
 assignment = ${ var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
@@ -162,7 +163,7 @@ args = { word_or_redirect* }
 assignments = { assignment* }
 simple_command = { assignments ~ argv0 ~ args }
 
-heredoc = { "<<" ~ PUSH(heredoc_marker) ~ newline* }
+heredoc = { "<<" ~ PUSH(heredoc_marker) }
 newline = {
     // Entering a here document. Use `PEEK_ALL` instead of `PEEK` to
     // prevent a panic on an empty stack. `(PEEK_ALL)` succeeds if
@@ -184,7 +185,10 @@ newline = {
 
 normal_newline = { "\n" }
 heredoc_marker = ${ word_char+ }
-heredoc_body = { (!(PEEK) ~ ANY)* }
+heredoc_body = { heredoc_line* }
+heredoc_line = { !(PEEK) ~ (word | heredoc_word)* ~ "\n" }
+heredoc_word = { !"\n" ~ ANY }
+
 
 //
 //  If Command

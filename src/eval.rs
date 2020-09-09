@@ -722,6 +722,7 @@ pub fn eval(
     stderr: RawFd,
 ) -> ExitStatus {
     trace!("ast: {:#?}", ast);
+    // println!("ast: {:#?}", ast);
     run_terms(shell, &ast.terms, stdin, stdout, stderr)
 }
 
