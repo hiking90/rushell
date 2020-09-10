@@ -15,6 +15,7 @@ extern crate structopt;
 extern crate failure;
 extern crate glob;
 extern crate whoami;
+extern crate regex;
 
 // #[cfg(test)]
 // extern crate test;

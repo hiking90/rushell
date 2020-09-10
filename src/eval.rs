@@ -11,6 +11,7 @@ use crate::variable::Value;
 use failure::Error;
 use nix;
 use nix::unistd::{close, fork, pipe, setpgid, ForkResult, Pid};
+use regex::Regex;
 use std::fs::File;
 use std::io::prelude::*;
 use std::os::unix::io::FromRawFd;
@@ -58,6 +59,28 @@ pub fn evaluate_expr(shell: &mut Shell, expr: &Expr) -> i32 {
             shell.assign(&name, Value::String(value.to_string()));
             value
         }
+    }
+}
+
+pub fn evaluate_regex(shell: &mut Shell, lhs: &CondExpr, pattern: &str) -> i32 {
+    let text = match lhs {
+        CondExpr::Word(word) => expand_word_into_string(shell, word),
+        _ => Err(format_err!("cond: expected word")),
+    };
+
+    if let Ok(text) = text {
+        let re = match Regex::new(pattern) {
+            Ok(re) => re,
+            Err(_) => return 2,
+        };
+
+        if re.is_match(&text) {
+            0
+        } else {
+            1
+        }
+    } else {
+        2
     }
 }
 
@@ -707,6 +730,7 @@ pub fn evaluate_cond(shell: &mut Shell, cond: &CondExpr) -> Result<bool> {
         CondExpr::Le(lhs, rhs) => parse_as_int!(lhs) <= parse_as_int!(rhs),
         CondExpr::Gt(lhs, rhs) => parse_as_int!(lhs) > parse_as_int!(rhs),
         CondExpr::Ge(lhs, rhs) => parse_as_int!(lhs) >= parse_as_int!(rhs),
+        CondExpr::Regex(lhs, rhs) => evaluate_regex(shell, lhs, rhs) == 0,
         CondExpr::Word(_) => true,
     };
 

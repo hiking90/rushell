@@ -151,6 +151,7 @@ pub enum CondExpr {
     Le(Box<CondExpr>, Box<CondExpr>),
     Gt(Box<CondExpr>, Box<CondExpr>),
     Ge(Box<CondExpr>, Box<CondExpr>),
+    Regex(Box<CondExpr>, String),
     Word(Word),
 }
 
@@ -693,18 +694,26 @@ impl ShellParser {
     fn visit_cond_term(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
         let mut inner = pair.into_inner();
         let lhs = self.visit_cond_primary(inner.next().unwrap());
-        if let Some(op) = inner.next() {
-            let rhs = self.visit_cond_term(inner.next().unwrap());
-            match op.as_span().as_str() {
-                "-eq" => Box::new(CondExpr::Eq(lhs, rhs)),
-                "-ne" => Box::new(CondExpr::Ne(lhs, rhs)),
-                "-lt" => Box::new(CondExpr::Lt(lhs, rhs)),
-                "-le" => Box::new(CondExpr::Le(lhs, rhs)),
-                "-gt" => Box::new(CondExpr::Gt(lhs, rhs)),
-                "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
-                "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
-                "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
-                _ => unimplemented!(),
+        if let Some(pair) = inner.next() {
+            match pair.as_rule() {
+                Rule::cond_op => {
+                    let rhs = self.visit_cond_term(inner.next().unwrap());
+                    match pair.as_span().as_str() {
+                        "-eq" => Box::new(CondExpr::Eq(lhs, rhs)),
+                        "-ne" => Box::new(CondExpr::Ne(lhs, rhs)),
+                        "-lt" => Box::new(CondExpr::Lt(lhs, rhs)),
+                        "-le" => Box::new(CondExpr::Le(lhs, rhs)),
+                        "-gt" => Box::new(CondExpr::Gt(lhs, rhs)),
+                        "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
+                        "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
+                        "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
+                        _ => unimplemented!(),
+                    }
+                }
+                Rule::pattern_word => {
+                    Box::new(CondExpr::Regex(lhs, pair.as_str().into()))
+                }
+                _ => unreachable!(),
             }
         } else {
             lhs
@@ -867,7 +876,7 @@ impl ShellParser {
 
         let (direction, default_fd) = match symbol.as_span().as_str() {
             "<" => (RedirectionDirection::Input, 0),
-            ">" => (RedirectionDirection::Output, 1),
+            ">" | ">|" => (RedirectionDirection::Output, 1),
             ">>" => (RedirectionDirection::Append, 1),
             _ => unreachable!(),
         };
@@ -3306,6 +3315,54 @@ pub fn test_export_empty() {
                         redirects: vec![],
                         assignments: vec![],
                     }],
+                }],
+            }],
+        })
+    );
+}
+
+#[test]
+pub fn test_grep() {
+    assert_eq!(
+        parse("grep -q -e \"^[0-9][0-9]*$\""),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "grep -q -e \"^[0-9][0-9]*$\"".into(),
+                background: false ,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("grep"), lit!("-q"), lit!("-e"),
+                            Word(vec![Span::Literal("^[0-9][0-9]*".into()),
+                                Span::Literal("$".into())])
+                        ],
+                        redirects: vec![],
+                        assignments: vec![]
+                    }]
+                }],
+            }],
+        })
+    );
+}
+
+#[test]
+pub fn test_regex() {
+    assert_eq!(
+        parse("[[ $1 =~ ^[0-9]+$ ]]"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "[[ $1 =~ ^[0-9]+$ ]]".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Cond(
+                        Box::new(CondExpr::Regex(
+                            Box::new(CondExpr::Word(
+                                param!("1", ExpansionOp::GetOrEmpty, false))
+                            ),
+                            "^[0-9]+$".into())
+                        )
+                    )],
                 }],
             }],
         })

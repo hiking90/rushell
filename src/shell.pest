@@ -32,7 +32,7 @@ var_name = ${ var_name_chars+ }
 username = ${ (!("/") ~ word_char)+ }
 special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | "-" | ASCII_DIGIT }
 
-index = { ("[" ~ (expr | index_all) ~ "]")? }
+index = { ("[" ~ (expr | index_all | command_substitution_span) ~ "]")? }
 index_all = { "*" | "@" }
 num = ${ ASCII_DIGIT+ }
 
@@ -70,6 +70,7 @@ span = _{
     | backtick_span
     | param_ex_span
     | param_span
+    | command_substitution_span
     | literal_span
 }
 escaped_char = { "\\" ~ ANY }
@@ -90,6 +91,7 @@ param_op = { ":=" | ":-" | "-"  | "=" | "//" | "/" }
 param_opt = { param_op ~ word? }
 param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ index ~ param_opt? ~ "}" }
 param_span = { "$" ~ expandable_var_name }
+command_substitution_span = { "$" ~ subshell_group }
 
 double_quoted_span = { "\"" ~ double_quoted_span_inner* ~ "\"" }
 double_quoted_span_inner = _{
@@ -113,6 +115,7 @@ literal_in_double_quoted_span = ${
         | "$" ~ WHITESPACE+ ~ ANY
         | WHITESPACE
     )+
+    | "$"
 }
 
 literal_in_single_quoted_span = ${ ( "\\'"  | !("\'") ~ ANY | WHITESPACE)+ }
@@ -132,7 +135,7 @@ assignment_command = { assignment+ }
 // Simple Command
 //
 fd = { ASCII_DIGIT* }
-redirect_direction = { !("<(" | ">(" | "<<") ~ ("<" | ">>" | ">") }
+redirect_direction = { !("<(" | ">(" | "<<") ~ ("<" | ">>" | ">|" | ">") }
 redirect_to_fd = ${ "&" ~ fd }
 redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
 word_or_redirect = _{ redirect | word | heredoc }
@@ -238,8 +241,14 @@ case_command = {
 //
 //  Function Definition
 //
+//function_definition = {
+//    ("function")? ~ var_name ~ "()" ~ wsnl? ~ command
+//}
+
 function_definition = {
-    ("function")? ~ var_name ~ "()" ~ wsnl? ~ command
+    (var_name ~ "()" ~ wsnl? ~ command)
+    |
+    ("function" ~ var_name ~ "()"* ~ wsnl? ~ command)
 }
 
 //
@@ -271,13 +280,15 @@ cond_ex = { "[[" ~ cond_expr ~ "]]" }
 cond_expr =  _{ cond_or }
 cond_or = { cond_and ~ ("||" ~ cond_or)? }
 cond_and = { cond_term ~ ("&&" ~ cond_and)? }
-cond_term = { cond_primary ~ (cond_op ~ cond_term)? }
+cond_term = { cond_primary ~ "=~" ~ pattern_word | cond_primary ~ (cond_op ~ cond_term)? }
 cond_op = { "==" | "=" | "!=" | "-gt" | "-lt" | "-ge" | "-le" | "-eq" | "-ne" }
 cond_primary = { cond_primary_inner }
 cond_primary_inner = _{
     word
     | "(" ~ cond_expr ~ ")"
 }
+
+pattern_word = ${ (!WHITESPACE ~ ANY)+ }
 
 //
 //  Command
