@@ -13,6 +13,7 @@ use nix;
 use nix::unistd::{close, fork, pipe, setpgid, ForkResult, Pid};
 use regex::Regex;
 use std::fs::File;
+use std::path::PathBuf;
 use std::io::prelude::*;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
@@ -38,6 +39,7 @@ pub fn evaluate_expr(shell: &mut Shell, expr: &Expr) -> i32 {
         Expr::Sub(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) - evaluate_expr(shell, rhs),
         Expr::Mul(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) * evaluate_expr(shell, rhs),
         Expr::Div(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) / evaluate_expr(shell, rhs),
+        Expr::Modulo(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) % evaluate_expr(shell, rhs),
         Expr::Assign { name, rhs } => {
             let value = evaluate_expr(shell, rhs);
             shell.assign(&name, Value::String(value.to_string()));
@@ -62,25 +64,71 @@ pub fn evaluate_expr(shell: &mut Shell, expr: &Expr) -> i32 {
     }
 }
 
-pub fn evaluate_regex(shell: &mut Shell, lhs: &CondExpr, pattern: &str) -> i32 {
-    let text = match lhs {
-        CondExpr::Word(word) => expand_word_into_string(shell, word),
-        _ => Err(format_err!("cond: expected word")),
-    };
-
-    if let Ok(text) = text {
-        let re = match Regex::new(pattern) {
-            Ok(re) => re,
-            Err(_) => return 2,
-        };
-
-        if re.is_match(&text) {
-            0
-        } else {
-            1
+pub fn evaluate_regex(_shell: &Shell, text: String, pattern: &str) -> bool {
+    match Regex::new(pattern) {
+        Ok(re) => {
+            if re.is_match(&text) {
+                true
+            } else {
+                false
+            }
         }
-    } else {
-        2
+        Err(err) => {
+            print_err!("{}", err);
+            false
+        }
+    }
+}
+
+pub fn evaluate_file(_shell: &Shell, file: String, op: &str) -> bool {
+    let path = PathBuf::from(file);
+    match op {
+        "-f" => {
+            path.is_file()
+        }
+        "-a" | "-e" => {
+            path.exists()
+        }
+        "-d" => {
+            path.is_dir()
+        }
+        "-h" | "-L" => {
+            if let Ok(meta) = path.symlink_metadata() {
+                meta.file_type().is_symlink()
+            } else {
+                false
+            }
+        }
+        "-s" => {
+            if let Ok(meta) = path.symlink_metadata() {
+                meta.len() > 0
+            } else {
+                false
+            }
+        }
+        "-N" => {
+            if let Ok(meta) = path.symlink_metadata() {
+                let modified = meta.modified().ok();
+                let accessed = meta.accessed().ok();
+                if modified != None && accessed != None {
+                    modified > accessed
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+        "-b" | "-c" | "-g" |
+        "-k" | "-p" | "-r" | "-t" | "-u" |
+        "-w" | "-x" | "-O" | "-G" |
+        "-S" => {
+            false
+        }
+        _ => {
+            print_err!("Unknown primary operator {}", op);
+            false
+        }
     }
 }
 
@@ -413,13 +461,18 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
             }
             ExitStatus::ExitedWith(0)
         }
-        parser::Command::Cond(expr) => {
-            let result = evaluate_cond(shell, expr)?;
-            if result {
-                ExitStatus::ExitedWith(0)
-            } else {
-                ExitStatus::ExitedWith(1)
+        parser::Command::Cond{is_not, expr} => {
+            let mut status = 1;
+            if let Some(expr) = expr {
+                let mut result = evaluate_cond(shell, expr)?;
+                if *is_not {
+                    result = !result;
+                }
+                if result {
+                    status = 0;
+                }
             }
+            ExitStatus::ExitedWith(status)
         }
         parser::Command::Group { terms } => {
             run_terms(shell, terms, ctx.stdin, ctx.stdout, ctx.stderr)
@@ -431,7 +484,11 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
         }
         parser::Command::Return { status } => {
             if let Some(status) = status {
-                shell.set_last_status(*status);
+                if let Ok(status) = expand_word_into_string(shell, status) {
+                    if let Ok(status) = status.parse::<i32>() {
+                        shell.set_last_status(status);
+                    }
+                }
             }
 
             ExitStatus::Return
@@ -730,7 +787,14 @@ pub fn evaluate_cond(shell: &mut Shell, cond: &CondExpr) -> Result<bool> {
         CondExpr::Le(lhs, rhs) => parse_as_int!(lhs) <= parse_as_int!(rhs),
         CondExpr::Gt(lhs, rhs) => parse_as_int!(lhs) > parse_as_int!(rhs),
         CondExpr::Ge(lhs, rhs) => parse_as_int!(lhs) >= parse_as_int!(rhs),
-        CondExpr::Regex(lhs, rhs) => evaluate_regex(shell, lhs, rhs) == 0,
+        CondExpr::Regex(lhs, rhs) => {
+            let text = eval_as_string!(lhs);
+            evaluate_regex(shell, text, rhs)
+        }
+        CondExpr::File(lhs, op) => {
+            let text = eval_as_string!(lhs);
+            evaluate_file(shell, text, op)
+        }
         CondExpr::Word(_) => true,
     };
 

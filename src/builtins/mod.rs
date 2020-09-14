@@ -54,6 +54,7 @@ pub static INTERNAL_COMMANDS: phf::Map<&'static str, InternalCommand> = phf_map!
     "echo" => crate::builtins::echo::command,
     "cd" => crate::builtins::cd::command,
     "source" => crate::builtins::source::command,
+    "." => crate::builtins::source::command,
     "exit" => crate::builtins::exit::command,
     "export" => crate::builtins::export::command,
     "set" => crate::builtins::set::command,

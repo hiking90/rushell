@@ -30,6 +30,13 @@ impl Variable {
         &self.value
     }
 
+    pub fn array(&self) -> Option<std::slice::Iter<String>> {
+        match &self.value {
+            Some(Value::Array(elems)) => Some(elems.iter()),
+            _ => None,
+        }
+    }
+
     /// References its value as `$foo`.
     pub fn as_str(&self) -> &str {
         match &self.value {

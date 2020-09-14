@@ -181,19 +181,38 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 index,
                 quoted,
             } => {
-                let index = evaluate_expr(shell, index);
+                let (index, is_all) = if let Ok(idx) = expand_word_into_string(shell, index) {
+                    if let Ok(idx) = idx.parse::<i32>() {
+                        (idx, false)
+                    } else if idx == "*" || idx == "@" {
+                        (0, true)
+                    } else {
+                        (-1, false)
+                    }
+                } else {
+                    (-1, false)
+                };
                 if index < 0 {
                     warn!(
                         "the index must be larger than or equals 0: var={}, index={}",
                         name, index
                     );
                     (vec![], !quoted)
-                } else {
+                } else if is_all == false {
                     let frag = shell
                         .get(name)
                         .map(|v| v.value_at(index as usize).to_string())
                         .unwrap_or_else(|| "".to_owned());
                     (vec![LiteralOrGlob::Literal(frag)], !quoted)
+                } else {
+                    if let Some(value) = shell.get(name) {
+                        let lit = value.array()
+                            .map_or(vec![],
+                                |elems| elems.map(|frag| LiteralOrGlob::Literal(frag.to_string())).collect());
+                        (lit, !quoted)
+                    } else {
+                        (vec![], !quoted)
+                    }
                 }
             }
             Span::ArithExpr { expr } => {

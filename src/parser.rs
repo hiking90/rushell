@@ -114,7 +114,7 @@ pub enum Command {
     Break,
     Continue,
     Return {
-        status: Option<i32>,
+        status: Option<Word>,
     },
     Case {
         word: Word,
@@ -133,7 +133,7 @@ pub enum Command {
     SubShellGroup {
         terms: Vec<Term>,
     },
-    Cond(Box<CondExpr>),
+    Cond{is_not: bool, expr: Option<Box<CondExpr>>},
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -152,6 +152,7 @@ pub enum CondExpr {
     Gt(Box<CondExpr>, Box<CondExpr>),
     Ge(Box<CondExpr>, Box<CondExpr>),
     Regex(Box<CondExpr>, String),
+    File(Box<CondExpr>, String),
     Word(Word),
 }
 
@@ -207,6 +208,7 @@ pub enum Expr {
     Sub(BinaryExpr),
     Mul(BinaryExpr),
     Div(BinaryExpr),
+    Modulo(BinaryExpr),
     Assign { name: String, rhs: Box<Expr> },
     Literal(i32),
 
@@ -257,7 +259,7 @@ pub enum Span {
     // $${foo[1]} ...
     ArrayParameter {
         name: String,
-        index: Expr,
+        index: Word,
         quoted: bool,
     },
     // $(echo hello && echo world)
@@ -357,17 +359,30 @@ impl ShellParser {
         Span::Command { body, quoted }
     }
 
-    // param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ param_opt? ~ "}" }
+    // param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ index ~ param_opt? ~ "}" }
     fn visit_param_ex_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
         let mut inner = pair.into_inner();
         let length_op = inner.next().unwrap().as_span().as_str().to_owned();
         let name = inner.next().unwrap().as_span().as_str().to_owned();
-        let index = inner
-            .next()
-            .unwrap()
-            .into_inner()
-            .next()
-            .map(|p| self.visit_expr(p));
+        let index = inner.next().unwrap().into_inner().next()
+            .map(|idx| match idx.as_rule() {
+                Rule::expr => {
+                    Word(vec![Span::ArithExpr{
+                        expr: self.visit_expr(idx)
+                    }])
+                }
+                Rule::index_all => Word(vec![Span::Literal(idx.as_span().as_str().into())]),
+                Rule::command_substitution_span => {
+                    let mut inner = idx.into_inner();
+                    let terms = self.visit_compound_list(inner.next().unwrap());
+                    Word(vec![Span::Command{
+                        body: terms,
+                        quoted: quoted,
+                    }])
+                    // Index::Command(self.visit_subshell_group_command(idx))
+                }
+                _ => unreachable!(),
+            });
 
         let op = if length_op == "#" {
             ExpansionOp::Length
@@ -525,6 +540,10 @@ impl ShellParser {
                     rhs: Box::new(rhs),
                 }),
                 "/" => Expr::Div(BinaryExpr {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }),
+                "%" => Expr::Modulo(BinaryExpr {
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 }),
@@ -691,32 +710,52 @@ impl ShellParser {
         }
     }
 
+    fn visit_cond_primary_op(&mut self, op: Pair<Rule>, pair: Pair<Rule>) -> Box<CondExpr> {
+        let lhs = self.visit_cond_primary(pair);
+        match op.as_span().as_str() {
+            "-z" => Box::new(CondExpr::StrEq(lhs, Box::new(CondExpr::Word(Word(vec![Span::Literal("".into())]))))),
+            "-n" => Box::new(CondExpr::StrNe(lhs, Box::new(CondExpr::Word(Word(vec![Span::Literal("".into())]))))),
+            "-a" | "-d" | "-e" | "-f" | "-h" | "-s" | "-L" |
+            "-N" => Box::new(CondExpr::File(lhs, op.as_span().as_str().into())),
+            "-b" | "-c" | "-g" |
+            "-k" | "-p" | "-r" | "-t" | "-u" |
+            "-w" | "-x" | "-O" | "-G" |
+            "-S" => unimplemented!(),
+            _ => unreachable!(),
+        }
+    }
+
     fn visit_cond_term(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
         let mut inner = pair.into_inner();
-        let lhs = self.visit_cond_primary(inner.next().unwrap());
-        if let Some(pair) = inner.next() {
-            match pair.as_rule() {
-                Rule::cond_op => {
-                    let rhs = self.visit_cond_term(inner.next().unwrap());
-                    match pair.as_span().as_str() {
-                        "-eq" => Box::new(CondExpr::Eq(lhs, rhs)),
-                        "-ne" => Box::new(CondExpr::Ne(lhs, rhs)),
-                        "-lt" => Box::new(CondExpr::Lt(lhs, rhs)),
-                        "-le" => Box::new(CondExpr::Le(lhs, rhs)),
-                        "-gt" => Box::new(CondExpr::Gt(lhs, rhs)),
-                        "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
-                        "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
-                        "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
-                        _ => unimplemented!(),
-                    }
-                }
-                Rule::pattern_word => {
-                    Box::new(CondExpr::Regex(lhs, pair.as_str().into()))
-                }
-                _ => unreachable!(),
-            }
+        let pair = inner.next().unwrap();
+        if pair.as_rule() == Rule::cond_primary_op {
+            self.visit_cond_primary_op(pair, inner.next().unwrap())
         } else {
-            lhs
+            let lhs = self.visit_cond_primary(pair);
+            if let Some(pair) = inner.next() {
+                match pair.as_rule() {
+                    Rule::cond_op => {
+                        let rhs = self.visit_cond_term(inner.next().unwrap());
+                        match pair.as_span().as_str() {
+                            "-eq" => Box::new(CondExpr::Eq(lhs, rhs)),
+                            "-ne" => Box::new(CondExpr::Ne(lhs, rhs)),
+                            "-lt" | "<" => Box::new(CondExpr::Lt(lhs, rhs)),
+                            "-le" => Box::new(CondExpr::Le(lhs, rhs)),
+                            "-gt" | ">" => Box::new(CondExpr::Gt(lhs, rhs)),
+                            "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
+                            "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
+                            "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
+                            _ => unimplemented!(),
+                        }
+                    }
+                    Rule::pattern_word => {
+                        Box::new(CondExpr::Regex(lhs, pair.as_str().into()))
+                    }
+                    _ => unreachable!(),
+                }
+            } else {
+                lhs
+            }
         }
     }
 
@@ -747,12 +786,26 @@ impl ShellParser {
         self.visit_cond_or(pair)
     }
 
-    // cond_ex = { "[[" ~ cond_expr ~ "]]" }
+    // cond_ex = { "[[" ~ cond_not? ~ cond_expr ~ "]]" }
     fn visit_cond_ex(&mut self, pair: Pair<Rule>) -> Command {
-        let mut inner = pair.into_inner();
-        let expr = self.visit_cond_expr(inner.next().unwrap());
+        let mut is_not = false;
+        let mut expr = None;
 
-        Command::Cond(expr)
+        for inner in pair.into_inner() {
+            match inner.as_rule() {
+                Rule::cond_not => {
+                    is_not = true;
+                },
+                Rule::cond_or => {
+                    expr = Some(self.visit_cond_or(inner));
+                }
+                _ => {
+                    unreachable!();
+                }
+            }
+        }
+
+        Command::Cond{is_not: is_not, expr: expr}
     }
 
     // word = ${ (tilde_span | span) ~ span* }
@@ -1190,10 +1243,18 @@ impl ShellParser {
 
     // return = { return ~ num? }
     fn visit_return_command(&mut self, pair: Pair<Rule>) -> Command {
-        let mut inner = pair.into_inner();
-        let status = inner
-            .next()
-            .map(|status| status.as_span().as_str().parse().unwrap());
+        let mut status = None;
+        for inner in pair.into_inner() {
+            match inner.as_rule() {
+                Rule::num => {
+                    status = Some(Word(vec![Span::Literal(inner.as_span().as_str().into())]))
+                }
+                Rule::param_span => {
+                    status = Some(Word(vec![self.visit_param_span(inner, false)]))
+                }
+                _ => unreachable!(),
+            }
+        };
 
         Command::Return { status }
     }
@@ -2377,7 +2438,9 @@ pub fn test_compound_commands() {
                                         background: false,
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
-                                            commands: vec![Command::Return { status: Some(3) }],
+                                            commands: vec![Command::Return {
+                                                status: Some(Word(vec![Span::Literal(3.to_string())]))
+                                            }],
                                         }],
                                     },
                                 ],
@@ -3034,6 +3097,34 @@ pub fn test_arith_expr() {
             }],
         })
     );
+
+    assert_eq!(
+        parse("$((($tdiff % 3600) / 60))"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "$((($tdiff % 3600) / 60))".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Span::ArithExpr {
+                                expr: Expr::Div(BinaryExpr {
+                                    lhs: Box::new(Expr::Expr(Box::new(Expr::Modulo(BinaryExpr {
+                                        lhs: Box::new(Expr::Parameter { name: "tdiff".into() }),
+                                        rhs: Box::new(Expr::Literal(3600))
+                                    })))),
+                                    rhs: Box::new(Expr::Literal(60))
+                                }) ,
+                            }]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![]
+                    }],
+                }],
+            }],
+        }),
+    );
 }
 
 #[test]
@@ -3285,14 +3376,14 @@ pub fn test_cond_ex() {
                     background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
-                        commands: vec![Command::Cond(Box::new(CondExpr::StrEq(
+                        commands: vec![Command::Cond{is_not: false, expr: Some(Box::new(CondExpr::StrEq(
                             Box::new(CondExpr::Word(Word(vec![Span::Parameter {
                                 name: "hello".into(),
                                 op: ExpansionOp::GetOrEmpty,
                                 quoted: false,
                             }]))),
                             Box::new(CondExpr::Word(lit!("world"),))
-                        )))]
+                        )))}]
                     }],
                 },
             ]
@@ -3346,6 +3437,44 @@ pub fn test_grep() {
 }
 
 #[test]
+pub fn test_cond_test() {
+    assert_eq!(
+        parse("[[ -z \"$1\" ]]"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "[[ -z \"$1\" ]]".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Cond{is_not: false, expr: Some(Box::new(CondExpr::StrEq(
+                        Box::new(CondExpr::Word(param!("1", ExpansionOp::GetOrEmpty, true))),
+                        Box::new(CondExpr::Word(lit!(""))))))
+                    }],
+                }],
+            }],
+        }),
+    );
+
+    assert_eq!(
+        parse("[ ! -f $FILELIST ]"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "[ ! -f $FILELIST ]".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("["), lit!("!"), lit!("-f"), param!("FILELIST", ExpansionOp::GetOrEmpty, false), lit!("]")],
+                        redirects: vec![],
+                        assignments: vec![]
+                    }],
+                }],
+            }],
+        }),
+    );
+}
+
+#[test]
 pub fn test_regex() {
     assert_eq!(
         parse("[[ $1 =~ ^[0-9]+$ ]]"),
@@ -3355,14 +3484,14 @@ pub fn test_regex() {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
-                    commands: vec![Command::Cond(
-                        Box::new(CondExpr::Regex(
+                    commands: vec![Command::Cond{is_not: false,
+                        expr: Some(Box::new(CondExpr::Regex(
                             Box::new(CondExpr::Word(
                                 param!("1", ExpansionOp::GetOrEmpty, false))
                             ),
                             "^[0-9]+$".into())
-                        )
-                    )],
+                        ))
+                    }],
                 }],
             }],
         })
