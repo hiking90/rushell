@@ -3,6 +3,7 @@ use pest::iterators::Pair;
 use pest::Parser;
 use std::os::unix::io::RawFd;
 use crate::utils;
+use crate::input::{ESCAPED_CHARS};
 
 #[derive(Parser)]
 #[grammar = "shell.pest"]
@@ -852,7 +853,7 @@ impl ShellParser {
                         match span_in_quote.as_rule() {
                             Rule::literal_in_double_quoted_span => {
                                 spans.push(Span::Literal(
-                                    self.visit_escape_sequences(span_in_quote, "\"`$\\"),
+                                    self.visit_escape_sequences(span_in_quote, ESCAPED_CHARS),
                                 ));
                             }
                             Rule::backtick_span => {
@@ -1464,7 +1465,6 @@ impl ShellParser {
     pub fn parse(&mut self, script: &str) -> Result<Ast, ParseError> {
         match PestShellParser::parse(Rule::script, script) {
             Ok(mut pairs) => {
-                // println!("{:?}", pairs);
                 let terms = self.visit_compound_list(pairs.next().unwrap());
 
                 if terms.is_empty() {

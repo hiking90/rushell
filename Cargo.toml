@@ -15,7 +15,8 @@ ansi_term = "0.12"
 linefeed = {version = "0.6.0", git = "https://github.com/hiking90/linefeed"}
 dirs = "3"
 failure = "0"
-log = { version = "^0", features = ["max_level_trace", "release_max_level_warn"] }
+log = { version = "0.4", features = ["max_level_trace", "release_max_level_warn"] }
+pretty_env_logger = "0.4"
 structopt = "0"
 phf = { version = "0", features = ["macros"] }
 lazy_static = "1"

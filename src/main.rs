@@ -8,6 +8,7 @@ extern crate pest_derive;
 extern crate ansi_term;
 extern crate dirs;
 extern crate linefeed;
+extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 extern crate structopt;
@@ -35,6 +36,8 @@ mod utils;
 mod variable;
 mod git;
 mod prompt;
+mod completion;
+mod input;
 
 // use crate::prompt::Prompt;
 use crate::variable::Value;
@@ -50,6 +53,8 @@ use std::sync::{Arc, Mutex};
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn main() -> io::Result<()> {
+    pretty_env_logger::init();
+
     let homedir = utils::home_dir();
 
     // let command_scanner = Arc::new(Mutex::new(completer::CommandScanner::new()));

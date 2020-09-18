@@ -3,7 +3,7 @@ use crate::builtins::INTERNAL_COMMANDS;
 use linefeed::complete::{Completer, Suffix};
 use linefeed::prompter::Prompter;
 use linefeed::terminal::Terminal;
-use crate::{utils, shell, variable};
+use crate::{utils, shell, variable, input, completion, eval};
 
 use std::borrow::Cow;
 use std::collections::{HashMap, BTreeMap, btree_map};
@@ -283,6 +283,36 @@ impl ShellCompleter {
 
         res
     }
+
+    pub fn complete_shell(&self, input: input::Input, word: &str, cursor: usize) -> Vec<linefeed::Completion> {
+        let mut res = Vec::new();
+
+        let mut shell = self.mutex_shell.lock().unwrap();
+
+        if let Some(options) = shell.get_completion(&input.words()[0].escaped_word) {
+            for opt in options.clone().iter() {
+                let list = match opt {
+                    completion::ArgOption::WordList(list) => {
+                        completion::split_word_list(&shell, &list).iter().map(|s| s.to_string()).collect()
+                    }
+                    completion::ArgOption::Function(func) => {
+                        let words = input.words().iter().map(|w| w.escaped_word.clone()).collect();
+                        eval::eval_completion_function(&mut shell, func, input.line(), words, cursor)
+                    }
+                    _ => unimplemented!(),
+                };
+                list.iter().for_each(|w| if w.starts_with(word) {
+                        res.push(linefeed::Completion {
+                        completion: w.to_string(),
+                        display: Some(w.to_string()),
+                        suffix: Suffix::Default,
+                    })
+                });
+            }
+        }
+
+        res
+    }
 }
 
 impl<Term: Terminal> Completer<Term> for ShellCompleter {
@@ -290,25 +320,34 @@ impl<Term: Terminal> Completer<Term> for ShellCompleter {
         &self,
         word: &str,
         reader: &Prompter<Term>,
-        start: usize,
+        _start: usize,
         _end: usize,
     ) -> Option<Vec<linefeed::Completion>> {
-        // println!("{}, {} : {}", word, _start, _reader.buffer());
+        // println!("{}, {} {} : {}", word, start, _end, reader.buffer());
         if word.starts_with("`") {
             return Some(self.complete_command(word));
         }
 
-        let mut input = String::from(reader.buffer());
-        input.truncate(start);
-        let input = input.trim();
+        let mut input = input::Input::from(reader.buffer());
 
-        let mut res = if input.is_empty() || input.ends_with("&") || input.ends_with("|") ||
-            input.ends_with(";") || input.ends_with("`") {
+        input.parse(_end);
+        if input.words().len() == 0 {
+            return None;
+        }
+
+        let idx = input.cursor_to_index(_end);
+
+        let mut res = if idx == 0 {
             self.complete_command(word)
         } else if word.starts_with("$") {
             self.complete_variable(word)
         } else {
-            self.complete_folder(word)
+            let res = self.complete_shell(input, word, idx);
+            if res.is_empty() {
+                self.complete_folder(word)
+            } else {
+                res
+            }
         };
 
         res.sort_by(|a, b| a.display().cmp(&b.display()));

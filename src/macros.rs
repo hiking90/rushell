@@ -10,9 +10,6 @@ macro_rules! print_err {
     () => { eprintln!(""); };
     ($fmt:expr) => {
         if *crate::macros::COLORS_ENABLED {
-            eprintln!(concat!("{}rushell: ", $fmt, "{}"),
-                ::ansi_term::Colour::Yellow.bold().prefix().to_owned(),
-                ::ansi_term::Style::default().suffix().to_owned());
             eprintln!("{}", ::ansi_term::Colour::Yellow.bold().paint(concat!("rushell: ", $fmt)));
         } else {
             eprintln!(concat!("rushell: ", $fmt));

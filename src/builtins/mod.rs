@@ -22,6 +22,7 @@ mod source;
 mod unset;
 mod wait;
 mod history;
+mod complete;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -53,6 +54,8 @@ pub static INTERNAL_COMMANDS: phf::Map<&'static str, InternalCommand> = phf_map!
     "alias" => crate::builtins::alias::command,
     "echo" => crate::builtins::echo::command,
     "cd" => crate::builtins::cd::command,
+    "compgen" => crate::builtins::complete::compgen,
+    "complete" => crate::builtins::complete::complete,
     "source" => crate::builtins::source::command,
     "." => crate::builtins::source::command,
     "exit" => crate::builtins::exit::command,

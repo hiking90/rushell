@@ -519,6 +519,70 @@ pub fn eval_in_subshell(shell: &mut Shell, terms: &[parser::Term]) -> Result<(i3
     Ok((status, pipe_out))
 }
 
+pub fn eval_completion_function(shell: &mut Shell, name: &str, line: &str, words: Vec<String>, current: usize) -> Vec<String> {
+    let mut res = Vec::new();
+
+    if let Some(var) = shell.get(name) {
+        if let Some(Value::Function(ref body)) = var.value() {
+            let (pipe_out, pipe_in) = pipe().expect("failed to create a pipe");
+
+            let ctx = Context {
+                stdin: 0,
+                stdout: pipe_in,
+                // stdout: 1,
+                stderr: 2,
+                pgid: None,
+                background: false,
+                interactive: false,
+            };
+
+            shell.enter_frame();
+
+            {
+                let frame = shell.current_frame_mut();
+
+                let mut args = [String::new(), String::new(), String::new()];
+                for i in 0..words.len() {
+                    if i == 0 {
+                        args[0] = words[i].to_owned();
+                    } else if i == current {
+                        args[1] = words[i].to_owned();
+                    }
+                    if i + 1 == current {
+                        args[2] = words[i].to_owned();
+                    }
+                }
+                // $1, $2, ...
+                frame.set_args(&args);
+
+                shell.set("COMP_WORDS", Value::Array(words), true);
+                shell.set("COMP_CWORD", Value::String(current.to_string()), true);
+                shell.set("COMP_LINE", Value::String(line.into()), true);
+
+                shell.set("COMPREPLY", Value::Array(vec![]), true);
+            }
+
+            if let Ok(result) = run_command(shell, &body, &ctx) {
+                match result {
+                    ExitStatus::ExitedWith(_) |
+                    ExitStatus::Return => {
+                        if let Some(value) = shell.get("COMPREPLY") {
+                            value.array().map(|a| a.for_each(|v| res.push(v.into())));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            shell.leave_frame();
+
+            close(pipe_in).ok();
+            close(pipe_out).ok();
+        }
+    }
+
+    res
+}
+
 fn spawn_subshell(shell: &mut Shell, terms: &[parser::Term], ctx: &Context) -> Result<Pid> {
     match fork().expect("failed to fork") {
         ForkResult::Parent { child } => Ok(child),
@@ -810,7 +874,6 @@ pub fn eval(
     stderr: RawFd,
 ) -> ExitStatus {
     trace!("ast: {:#?}", ast);
-    // println!("ast: {:#?}", ast);
     run_terms(shell, &ast.terms, stdin, stdout, stderr)
 }
 

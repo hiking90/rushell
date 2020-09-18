@@ -4,10 +4,11 @@ use crate::parser;
 use crate::process::{ExitStatus, Job, JobId, ProcessState};
 use crate::variable::{Frame, Value, Variable};
 use crate::completer;
+use crate::completion::ArgOption;
 use nix;
 use nix::sys::termios::{tcgetattr, Termios};
 use nix::unistd::{getpid, Pid};
-use std::collections::{HashMap, HashSet, hash_map};
+use std::collections::{HashMap, HashSet, BTreeMap, hash_map, btree_map};
 use std::fmt;
 use std::fs::File;
 use std::io;
@@ -66,6 +67,7 @@ pub struct Shell {
     commands_scanner: completer::CommandScanner,
 
     commands: Option<completer::CommandMap>,
+    completion: BTreeMap<String, Arc<Vec<ArgOption>>>,
 }
 
 impl Shell {
@@ -93,6 +95,7 @@ impl Shell {
             linefeed: None,
             commands_scanner: completer::CommandScanner::new(),
             commands: None,
+            completion: BTreeMap::new(),
         }
     }
 
@@ -373,7 +376,6 @@ impl Shell {
         stdout: RawFd,
         stderr: RawFd,
     ) -> ExitStatus {
-        // let script = script.replace("\\\n", "");
         match parser::parse(&script) {
             Ok(ast) => eval(self, &ast, stdin, stdout, stderr),
             Err(parser::ParseError::Empty) => {
@@ -412,5 +414,17 @@ impl Shell {
 
     pub fn variables(&self) -> hash_map::Iter<String, Arc<Variable>> {
         self.global.iter()
+    }
+
+    pub fn insert_completion(&mut self, name: String, options: Arc<Vec<ArgOption>>) {
+        self.completion.insert(name, options);
+    }
+
+    pub fn completion(&self) -> btree_map::Iter<String, Arc<Vec<ArgOption>>> {
+        return self.completion.iter();
+    }
+
+    pub fn get_completion(&self, command: &str) -> Option<&Arc<Vec<ArgOption>>> {
+        self.completion.get(command)
     }
 }
