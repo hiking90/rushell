@@ -170,8 +170,9 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
             Span::Parameter { name, op, quoted: _ } => {
                 let mut frags = Vec::new();
                 for value in expand_param(shell, name, op)? {
-                    let frag = value.unwrap_or_else(|| "".to_owned());
-                    frags.push(LiteralOrGlob::Literal(frag));
+                    if let Some(frag) = value {
+                        frags.push(LiteralOrGlob::Literal(frag));
+                    }
                 }
                 // (frags, !quoted)
                 (frags, false)
@@ -199,11 +200,16 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                     );
                     (vec![], !quoted)
                 } else if is_all == false {
-                    let frag = shell
-                        .get(name)
-                        .map(|v| v.value_at(index as usize).to_string())
-                        .unwrap_or_else(|| "".to_owned());
-                    (vec![LiteralOrGlob::Literal(frag)], !quoted)
+                    // let frag = shell
+                    //     .get(name)
+                    //     .map(|v| v.value_at(index as usize).to_string())
+                    //     .unwrap_or_else(|| "".to_owned());
+                    if let Some(frag) = shell.get(name)
+                        .map(|v| v.value_at(index as usize).to_string()) {
+                        (vec![LiteralOrGlob::Literal(frag)], !quoted)
+                    } else {
+                        (vec![], !quoted)
+                    }
                 } else {
                     if let Some(value) = shell.get(name) {
                         let lit = value.array()
@@ -242,7 +248,11 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                     .trim_end_matches('\n')
                     .to_owned();
 
-                (vec![LiteralOrGlob::Literal(output)], !quoted)
+                if output.is_empty() {
+                    (vec![], !quoted)
+                } else {
+                    (vec![LiteralOrGlob::Literal(output)], !quoted)
+                }
             }
             Span::ProcSubst { body, subst_type } => {
                 let (_, stdout) = eval_in_subshell(shell, body)?;
@@ -297,9 +307,10 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
 
     trace!("expand_word: word={:?}, to={:?}", word, words);
     if words.is_empty() {
-        Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal(
-            "".into(),
-        )])])
+        Ok(vec![])
+        // Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal(
+        //     "".into(),
+        // )])])
     } else {
         Ok(words)
     }

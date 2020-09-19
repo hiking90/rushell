@@ -529,7 +529,6 @@ pub fn eval_completion_function(shell: &mut Shell, name: &str, line: &str, words
             let ctx = Context {
                 stdin: 0,
                 stdout: pipe_in,
-                // stdout: 1,
                 stderr: 2,
                 pgid: None,
                 background: false,
