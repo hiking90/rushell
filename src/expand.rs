@@ -182,44 +182,33 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 index,
                 quoted,
             } => {
-                let (index, is_all) = if let Ok(idx) = expand_word_into_string(shell, index) {
+                let mut result = (vec![], !quoted);
+                if let Ok(idx) = expand_word_into_string(shell, index) {
                     if let Ok(idx) = idx.parse::<i32>() {
-                        (idx, false)
+                        if idx < 0 {
+                            warn!(
+                                "the index must be larger than or equals 0: var={}, index={}",
+                                name, idx
+                            );
+                        } else {
+                            if let Some(frag) = shell.get(name)
+                                .map(|v| v.value_at(idx as usize).to_string()) {
+                                result = (vec![LiteralOrGlob::Literal(frag)], !quoted);
+                            }
+                        }
                     } else if idx == "*" || idx == "@" {
-                        (0, true)
-                    } else {
-                        (-1, false)
-                    }
-                } else {
-                    (-1, false)
-                };
-                if index < 0 {
-                    warn!(
-                        "the index must be larger than or equals 0: var={}, index={}",
-                        name, index
-                    );
-                    (vec![], !quoted)
-                } else if is_all == false {
-                    // let frag = shell
-                    //     .get(name)
-                    //     .map(|v| v.value_at(index as usize).to_string())
-                    //     .unwrap_or_else(|| "".to_owned());
-                    if let Some(frag) = shell.get(name)
-                        .map(|v| v.value_at(index as usize).to_string()) {
-                        (vec![LiteralOrGlob::Literal(frag)], !quoted)
-                    } else {
-                        (vec![], !quoted)
-                    }
-                } else {
-                    if let Some(value) = shell.get(name) {
-                        let lit = value.array()
-                            .map_or(vec![],
-                                |elems| elems.map(|frag| LiteralOrGlob::Literal(frag.to_string())).collect());
-                        (lit, !quoted)
-                    } else {
-                        (vec![], !quoted)
+                        if let Some(value) = shell.get(name) {
+                            let values = value.array().map_or(vec![], |elems| elems.map(|frag| frag.to_string()).collect());
+                            let lit = if *quoted {
+                                vec![LiteralOrGlob::Literal(values.join(" "))]
+                            } else {
+                                values.into_iter().map(|v| LiteralOrGlob::Literal(v)).collect()
+                            };
+                            result = (lit, !quoted)
+                        }
                     }
                 }
+                result
             }
             Span::ArithExpr { expr } => {
                 let result = evaluate_expr(shell, expr).to_string();

@@ -236,7 +236,6 @@ fn run_simple_command(
             return call_function(shell, argv0, ctx, &args, vec![]);
         }
     }
-
     // Internal commands
     let result = run_internal_command(shell, &argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects);
     match result {
@@ -366,7 +365,7 @@ fn run_for_command(
         let expanded_words = expand_word_into_vec(shell, unexpanded_word, &shell.ifs())?;
         for pattern_word in expanded_words {
             for value in pattern_word.expand_glob()? {
-                shell.set(&var_name, Value::String(value), false);
+                shell.set(&var_name, Value::String(value), true);
 
                 let result = run_terms(shell, body, ctx.stdin, ctx.stdout, ctx.stderr);
                 match result {
