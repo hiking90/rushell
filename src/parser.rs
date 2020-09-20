@@ -1,6 +1,6 @@
 use ansi_term::Colour;
 use pest::iterators::Pair;
-use pest::Parser;
+use pest::{Parser, error};
 use std::os::unix::io::RawFd;
 use crate::utils;
 use crate::input::{ESCAPED_CHARS};
@@ -179,6 +179,7 @@ pub struct Ast {
 pub enum ParseError {
     Fatal(String),
     Empty,
+    Expected(String),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1473,7 +1474,32 @@ impl ShellParser {
                     Ok(self.resolve_heredocs(Ast { terms }))
                 }
             }
-            Err(err) => Err(ParseError::Fatal(err.to_string())),
+            Err(err) => {
+                let mut r_err = ParseError::Fatal(err.to_string());
+                match err.variant {
+                    error::ErrorVariant::ParsingError {
+                        ref positives,
+                        ref negatives,
+                    } => if negatives.is_empty() && positives.is_empty() == false {
+                        let expected_rules = vec![Rule::command, Rule::normal_newline];
+                        let mut expected = false;
+
+                        for rule in positives {
+                            if expected_rules.contains(&rule) {
+                                expected = true;
+                                break;
+                            }
+                        }
+
+                        if expected {
+                            r_err = ParseError::Expected(err.to_string());
+                        }
+                    }
+                    _ => {}
+
+                }
+                Err(r_err)
+            }
         }
     }
 

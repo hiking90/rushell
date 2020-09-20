@@ -58,9 +58,9 @@ impl PowerLine {
     fn arrow_format(&self, style: Style, next: Option<Style>) -> String {
         let arrow_style = theme::Theme::arrow(style, next);
 
-        format!("{arrow_prefix}\u{E0B0}{arrow_suffix}",
-            arrow_prefix = arrow_style.prefix(),
-            arrow_suffix = arrow_style.suffix(),
+        format!("{}\u{E0B0}{}",
+            arrow_style.prefix(),
+            arrow_style.suffix(),
         )
     }
 }
@@ -145,18 +145,18 @@ impl Prompt for PowerLine {
 
         let style = theme.path(readonly);
 
-        let path = format!("{path_prefix} {path}{path_suffix}",
-            path_prefix = style.prefix(),
-            path = path,
-            path_suffix = style.suffix(),
+        let path = format!("{} {}{}",
+            style.prefix(),
+            path,
+            style.suffix(),
         );
 
         let style = theme.basename(readonly);
 
-        let base = format!("{base_prefix}{basename} {base_suffix}",
-            base_prefix = style.prefix(),
-            basename = basename,
-            base_suffix = style.suffix(),
+        let base = format!("{}{} {}",
+            style.prefix(),
+            basename,
+            style.suffix(),
         );
 
         let arrow = self.arrow_format(theme.path_basename, git_style);

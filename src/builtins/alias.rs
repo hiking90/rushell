@@ -33,6 +33,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
                 ctx.shell.add_alias(&name, body);
                 ExitStatus::ExitedWith(0)
             }
+            Err(parser::ParseError::Expected(err)) |
             Err(parser::ParseError::Fatal(err)) => {
                 writeln!(ctx.stderr, "rushell: alias: {}", err).ok();
                 ExitStatus::ExitedWith(1)

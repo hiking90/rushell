@@ -185,18 +185,30 @@ fn main() -> io::Result<()> {
             process::check_background_jobs(&mut shell);
             match readline {
                 ReadResult::Input(line) => {
-                    let trimed = line.trim();
+                    multiline.push_str(&line);
+                    multiline.push('\n');
 
-                    if trimed.ends_with("\\") == true {
-                        multiline.push_str(&trimed[..trimed.len() - 1]);
-                    } else {
-                        multiline.push_str(&trimed);
-                        shell.run_str(&multiline);
-                        multiline = String::new();
+                    let trimed = line.trim();
+                    if trimed.ends_with("\\") == false {
+                        match parser::parse(&multiline) {
+                            Ok(_) => {
+                                shell.run_str(&multiline);
+                                multiline = String::new();
+                            }
+                            Err(parser::ParseError::Empty) => {
+                                multiline = String::new();
+                            }
+                            Err(parser::ParseError::Expected(_err)) => {
+                            }
+                            Err(parser::ParseError::Fatal(err)) => {
+                                print_err!("parse error: {}", err);
+                                multiline = String::new();
+                            }
+                        }
                     }
 
                     if trimed.len() != 0 {
-                        interface.add_history_unique(trimed.to_owned());
+                        interface.add_history_unique(line.to_owned());
                     }
                 }
                 ReadResult::Signal(sig) => {
