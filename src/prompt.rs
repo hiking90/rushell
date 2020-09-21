@@ -166,14 +166,11 @@ impl PowerLine {
 impl Prompt for PowerLine {
     fn main(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String {
         format!("\x01{}\x02 ", self.build(shell, condition, &theme::nord_theme()))
-
-        // let theme = theme::nord_theme();
-        // let theme = theme::plain_theme();
     }
 
     fn second(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String {
         let normal = self.build(shell, condition, &theme::plain_theme());
-        format!("{} ", (0..normal.chars().count()).map(|_| " ").collect::<String>())
+        " ".repeat(normal.chars().count() + 1)
     }
 }
 
