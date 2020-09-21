@@ -191,7 +191,7 @@ pub fn continue_job(shell: &mut Shell, job: &Arc<Job>, background: bool) {
 }
 
 /// Put the given pgid (job) into the foreground.
-fn set_terminal_process_group(pgid: Pid) {
+pub fn set_terminal_process_group(pgid: Pid) {
     tcsetpgrp(0, pgid).expect("failed to tcsetpgrp");
 }
 

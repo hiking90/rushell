@@ -119,6 +119,18 @@ fn main() -> io::Result<()> {
 
     interface.set_completer(Arc::new(completer::ShellCompleter::new(mutex_shell.clone(), folder_scanner.clone())));
 
+    // Ignore job-control-related signals in order not to stop the shell.
+    // (refer https://www.gnu.org/software/libc/manual)
+    // Don't ignore SIGCHLD! If you ignore it waitpid(2) returns ECHILD.
+    let action = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
+    unsafe {
+        sigaction(Signal::SIGINT, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGQUIT, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGTSTP, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGTTIN, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
+    }
+
     if let Ok(mut shell) = mutex_shell.lock() {
         shell.set_linefeed(interface.clone());
 
@@ -141,20 +153,8 @@ fn main() -> io::Result<()> {
 
         shell.run_file(init_file).ok();
 
-        let stdout = std::fs::File::create("/dev/stdout").unwrap();
-        shell.set_interactive(unistd::isatty(stdout.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
-    }
-
-    // Ignore job-control-related signals in order not to stop the shell.
-    // (refer https://www.gnu.org/software/libc/manual)
-    // Don't ignore SIGCHLD! If you ignore it waitpid(2) returns ECHILD.
-    let action = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
-    unsafe {
-        sigaction(Signal::SIGINT, &action).expect("failed to sigaction");
-        sigaction(Signal::SIGQUIT, &action).expect("failed to sigaction");
-        sigaction(Signal::SIGTSTP, &action).expect("failed to sigaction");
-        sigaction(Signal::SIGTTIN, &action).expect("failed to sigaction");
-        sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
+        let stdin = std::fs::File::create("/dev/tty").unwrap();
+        shell.set_interactive(unistd::isatty(stdin.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
     }
 
     let mut prompt = if let Some(prompt) = prompt::PromptCommand::new() {

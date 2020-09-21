@@ -1,13 +1,13 @@
 use crate::eval::eval;
 use crate::linefeed::{DefaultTerminal, Interface};
 use crate::parser;
-use crate::process::{ExitStatus, Job, JobId, ProcessState};
+use crate::process::{ExitStatus, Job, JobId, ProcessState, set_terminal_process_group};
 use crate::variable::{Frame, Value, Variable};
 use crate::completer;
 use crate::completion::ArgOption;
 use nix;
 use nix::sys::termios::{tcgetattr, Termios};
-use nix::unistd::{getpid, Pid};
+use nix::unistd::{getpid, Pid, setpgid, tcgetpgrp};
 use std::collections::{HashMap, HashSet, BTreeMap, hash_map, btree_map};
 use std::fmt;
 use std::fs::File;
@@ -111,7 +111,13 @@ impl Shell {
     pub fn set_interactive(&mut self, interactive: bool) {
         self.interactive = interactive;
         self.shell_termios = if interactive {
-            Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr"))
+            if self.shell_pgid != nix::unistd::getpgrp() {
+                nix::unistd::setpgid(self.shell_pgid, self.shell_pgid).expect("failed to setpgid");
+            }
+            if self.shell_pgid != tcgetpgrp(nix::libc::STDIN_FILENO).expect("failed to tcgetpgrp") {
+                set_terminal_process_group(self.shell_pgid);
+            }
+            Some(tcgetattr(nix::libc::STDIN_FILENO).expect("failed to tcgetattr"))
         } else {
             None
         };

@@ -236,7 +236,7 @@ impl Prompt for Default {
         let path_style = theme.path(readonly);
         let style = theme::default_theme().prompt;
 
-        format!("\n\x01{host}{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
+        format!("\n \x01{host}{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
             host = host_prompt,
             path_prefix = path_style.prefix(),
             path = path,
