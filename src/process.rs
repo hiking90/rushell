@@ -58,6 +58,7 @@ pub enum ExitStatus {
     Return,
     // The command is not executed because of `noexec`.
     NoExec,
+    Expected,
 }
 
 /// The process execution environment.

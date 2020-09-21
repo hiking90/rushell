@@ -1496,7 +1496,6 @@ impl ShellParser {
                         }
                     }
                     _ => {}
-
                 }
                 Err(r_err)
             }

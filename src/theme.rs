@@ -24,11 +24,13 @@ impl Theme {
         let mut res = if let Some(background) = style.background {
             background.normal()
         } else {
-            Color::Black.normal()
+            Style::default()
         };
 
         if let Some(connected) = connected {
-            res = res.on(connected.background.unwrap_or(Color::Black));
+            if let Some(background) = connected.background {
+                res = res.on(background);
+            }
         }
 
         res
@@ -100,3 +102,24 @@ pub fn nord_theme() -> Theme {
     }
 }
 
+pub fn plain_theme() -> Theme {
+    let normal = Style::default();
+    Theme {
+        prompt: normal,
+        prompt_continue: normal,
+
+        path: normal,
+        path_debug: normal,
+        path_basename: normal,
+        path_nowrite: normal,
+        path_nowrite_basename: normal,
+
+        repo: normal,
+        repo_work_tree: normal,
+        repo_dirty: normal,
+        repo_staged: normal,
+
+        hostname: normal,
+        username: normal,
+    }
+}

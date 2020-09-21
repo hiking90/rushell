@@ -35,10 +35,10 @@ impl Condition {
 }
 
 pub trait Prompt {
-    fn main_display(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String;
-    fn continue_display(&mut self) -> String {
+    fn main(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String;
+    fn second(&mut self, _shell: &mut shell::Shell, _condition: &Condition) -> String {
         let style = theme::default_theme().prompt_continue;
-        format!("\x01{}>>{}\x02 ",
+        format!("\x01{} ❯{}\x02 ",
             style.prefix(),
             style.suffix(),
         )
@@ -63,12 +63,8 @@ impl PowerLine {
             arrow_style.suffix(),
         )
     }
-}
 
-impl Prompt for PowerLine {
-    fn main_display(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
-        let theme = theme::nord_theme();
-
+    fn build(&mut self, _shell: &mut shell::Shell, condition: &Condition, theme: &theme::Theme) -> String {
         let mut cwd = utils::current_working_dir();
         let mut git_style = None;
 
@@ -161,9 +157,23 @@ impl Prompt for PowerLine {
 
         let arrow = self.arrow_format(theme.path_basename, git_style);
 
-        format!("\x01{}{}{}{}{}\x02 ",
+        format!("{}{}{}{}{}",
             host, path, base, arrow, git,
         )
+    }
+}
+
+impl Prompt for PowerLine {
+    fn main(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String {
+        format!("\x01{}\x02 ", self.build(shell, condition, &theme::nord_theme()))
+
+        // let theme = theme::nord_theme();
+        // let theme = theme::plain_theme();
+    }
+
+    fn second(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String {
+        let normal = self.build(shell, condition, &theme::plain_theme());
+        format!("{} ", (0..normal.chars().count()).map(|_| " ").collect::<String>())
     }
 }
 
@@ -180,7 +190,7 @@ impl Default {
 }
 
 impl Prompt for Default {
-    fn main_display(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
+    fn main(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
         let theme = theme::default_theme();
 
         let mut cwd = utils::current_working_dir();
@@ -259,7 +269,7 @@ impl PromptCommand {
 }
 
 impl Prompt for PromptCommand {
-    fn main_display(&mut self, shell: &mut shell::Shell, _condition: &Condition) -> String {
+    fn main(&mut self, shell: &mut shell::Shell, _condition: &Condition) -> String {
         let (pipe_in, pipe_out) = pipe().expect("failed to create a pipe for PROMPT_COMMAND");
         let _status = shell.run_str_with_stdio(&self.command, 0, pipe_out, 2);
         close(pipe_out).ok();

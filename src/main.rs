@@ -172,9 +172,9 @@ fn main() -> io::Result<()> {
         if let Ok(mut shell) = mutex_shell.lock() {
             shell.scan_commands();
             let prompt_display = if multiline.is_empty() {
-                prompt.main_display(&mut shell, &prompt::Condition::new())
+                prompt.main(&mut shell, &prompt::Condition::new())
             } else {
-                prompt.continue_display()
+                prompt.second(&mut shell, &prompt::Condition::new())
             };
             interface.set_prompt(&prompt_display)?;
         }
@@ -190,18 +190,9 @@ fn main() -> io::Result<()> {
 
                     let trimed = line.trim();
                     if trimed.ends_with("\\") == false {
-                        match parser::parse(&multiline) {
-                            Ok(_) => {
-                                shell.run_str(&multiline);
-                                multiline = String::new();
-                            }
-                            Err(parser::ParseError::Empty) => {
-                                multiline = String::new();
-                            }
-                            Err(parser::ParseError::Expected(_err)) => {
-                            }
-                            Err(parser::ParseError::Fatal(err)) => {
-                                print_err!("parse error: {}", err);
+                        match shell.run_str(&multiline) {
+                            process::ExitStatus::Expected => {},
+                            _ => {
                                 multiline = String::new();
                             }
                         }

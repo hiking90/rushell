@@ -675,6 +675,10 @@ fn run_pipeline(
                 last_result = Some(ExitStatus::NoExec);
                 break;
             }
+            Ok(ExitStatus::Expected) => {
+                last_result = Some(ExitStatus::Expected);
+                break;
+            }
             Err(err) => {
                 if err
                     .find_root_cause()
@@ -727,18 +731,24 @@ fn run_pipeline(
                 }
             }
         }
-        Some(ExitStatus::Break) => {
-            return ExitStatus::Break;
+        Some(status) => {
+            return status;
         }
-        Some(ExitStatus::Continue) => {
-            return ExitStatus::Continue;
-        }
-        Some(ExitStatus::Return) => {
-            return ExitStatus::Return;
-        }
-        Some(ExitStatus::NoExec) => {
-            return ExitStatus::NoExec;
-        }
+        // Some(ExitStatus::Break) => {
+        //     return ExitStatus::Break;
+        // }
+        // Some(ExitStatus::Continue) => {
+        //     return ExitStatus::Continue;
+        // }
+        // Some(ExitStatus::Return) => {
+        //     return ExitStatus::Return;
+        // }
+        // Some(ExitStatus::NoExec) => {
+        //     return ExitStatus::NoExec;
+        // }
+        // Some(ExitStatus::NoExec) => {
+        //     return ExitStatus::NoExec;
+        // }
         None => {
             trace!("nothing to execute");
             ExitStatus::ExitedWith(0)
