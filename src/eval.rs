@@ -218,10 +218,15 @@ fn run_simple_command(
     shell: &mut Shell,
     ctx: &Context,
     argv: &[Word],
+    external: bool,
     redirects: &[parser::Redirection],
     assignments: &[parser::Assignment],
 ) -> Result<ExitStatus> {
-    let argv = expand_words(shell, &expand_alias(shell, argv))?;
+    let argv = if external {
+        expand_words(shell, argv)?
+    } else {
+        expand_words(shell, &expand_alias(shell, argv))?
+    };
     if argv.is_empty() {
         // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
         // named "foo.txt".
@@ -237,14 +242,16 @@ fn run_simple_command(
         }
     }
     // Internal commands
-    let result = run_internal_command(shell, &argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects);
-    match result {
-        Ok(status) => return Ok(status),
-        Err(err) => {
-            match err.find_root_cause().downcast_ref::<InternalCommandError>() {
-                Some(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
-                Some(InternalCommandError::NotFound) => (), /* Try external command. */
-                _ => return Err(err),
+    if external == false {
+        let result = run_internal_command(shell, &argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects);
+        match result {
+            Ok(status) => return Ok(status),
+            Err(err) => {
+                match err.find_root_cause().downcast_ref::<InternalCommandError>() {
+                    Some(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
+                    Some(InternalCommandError::NotFound) => (), /* Try external command. */
+                    _ => return Err(err),
+                }
             }
         }
     }
@@ -414,10 +421,11 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
     trace!("run_command: {:?}", command);
     let result = match command {
         parser::Command::SimpleCommand {
+            external,
             argv,
             redirects,
             assignments,
-        } => run_simple_command(shell, ctx, &argv, &redirects, &assignments)?,
+        } => run_simple_command(shell, ctx, &argv, *external, &redirects, &assignments)?,
         parser::Command::If {
             condition,
             then_part,

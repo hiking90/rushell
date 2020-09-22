@@ -161,7 +161,10 @@ reserved_word = ${
         | "[["
     ) ~ !(word_char)
 }
-argv0 = { !reserved_word ~ word }
+
+normal_argv0 = { !reserved_word ~ word }
+external_argv0 = ${ ("\\" ~ normal_argv0) | ("\"" ~ normal_argv0 ~ "\"") }
+argv0 = { external_argv0 | normal_argv0 }
 args = { word_or_redirect* }
 assignments = { assignment* }
 simple_command = { assignments ~ argv0 ~ args }

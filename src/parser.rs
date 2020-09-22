@@ -81,6 +81,7 @@ pub enum LocalDeclaration {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     SimpleCommand {
+        external: bool,
         argv: Vec<Word>,
         redirects: Vec<Redirection>,
         /// Assignment prefixes. (e.g. "RAILS_ENV=production rails server")
@@ -1027,7 +1028,16 @@ impl ShellParser {
         let argv0 = inner.next().unwrap().into_inner().next().unwrap();
         let args = inner.next().unwrap().into_inner();
 
-        argv.push(self.visit_word(argv0));
+        let (external, argv0) = match argv0.as_rule() {
+            Rule::external_argv0 => {
+                (true, argv0.into_inner().next().unwrap())
+            },
+            Rule::normal_argv0 => {
+                (false, argv0)
+            },
+            _ => unreachable!(),
+        };
+        argv.push(self.visit_word(argv0.into_inner().next().unwrap()));
         for word_or_redirect in args {
             match word_or_redirect.as_rule() {
                 Rule::word => argv.push(self.visit_word(word_or_redirect)),
@@ -1051,6 +1061,7 @@ impl ShellParser {
         }
 
         Command::SimpleCommand {
+            external: external,
             argv,
             redirects,
             assignments,
@@ -1416,6 +1427,7 @@ impl ShellParser {
                 for command in pipeline.commands {
                     match command {
                         Command::SimpleCommand {
+                            external,
                             argv,
                             redirects,
                             assignments,
@@ -1437,6 +1449,7 @@ impl ShellParser {
                             }
 
                             new_commands.push(Command::SimpleCommand {
+                                external: external,
                                 argv,
                                 redirects: new_redirects,
                                 assignments,
@@ -1572,6 +1585,7 @@ pub fn test_simple_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: literal_word_vec!["ls", "-G", "/tmp"],
                         redirects: vec![],
                         assignments: vec![],
@@ -1591,16 +1605,19 @@ pub fn test_simple_commands() {
                     run_if: RunIf::Always,
                     commands: vec![
                         Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "hello"],
                             redirects: vec![],
                             assignments: vec![],
                         },
                         Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["hexdump", "-C"],
                             redirects: vec![],
                             assignments: vec![],
                         },
                         Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["date"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1622,6 +1639,7 @@ pub fn test_simple_commands() {
                         Pipeline {
                             run_if: RunIf::Always,
                             commands: vec![Command::SimpleCommand {
+                                external: false,
                                 argv: literal_word_vec!["false"],
                                 redirects: vec![],
                                 assignments: vec![],
@@ -1630,6 +1648,7 @@ pub fn test_simple_commands() {
                         Pipeline {
                             run_if: RunIf::Failure,
                             commands: vec![Command::SimpleCommand {
+                                external: false,
                                 argv: literal_word_vec!["false"],
                                 redirects: vec![],
                                 assignments: vec![],
@@ -1638,6 +1657,7 @@ pub fn test_simple_commands() {
                         Pipeline {
                             run_if: RunIf::Success,
                             commands: vec![Command::SimpleCommand {
+                                external: false,
                                 argv: literal_word_vec!["echo", "unreachable"],
                                 redirects: vec![],
                                 assignments: vec![],
@@ -1651,6 +1671,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "reachable"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1671,6 +1692,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "-n", "Hello world", "from"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1683,6 +1705,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "nsh"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1703,6 +1726,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "foo"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1715,6 +1739,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["sleep", "1"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1727,6 +1752,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "bar"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1739,6 +1765,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "baz"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1751,6 +1778,7 @@ pub fn test_simple_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["echo", "foo2"],
                             redirects: vec![],
                             assignments: vec![],
@@ -1770,6 +1798,7 @@ pub fn test_simple_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: literal_word_vec!["rails", "s"],
                         redirects: vec![],
                         assignments: vec![
@@ -1803,6 +1832,7 @@ pub fn test_simple_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: literal_word_vec!["ls", "-G"],
                         redirects: vec![
                             Redirection {
@@ -1849,6 +1879,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: literal_word_vec!["true"],
                                     redirects: vec![],
                                     assignments: vec![],
@@ -1861,6 +1892,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: literal_word_vec!["echo", "it", "works"],
                                     redirects: vec![],
                                     assignments: vec![],
@@ -1891,6 +1923,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: literal_word_vec!["maybe-true"],
                                     redirects: vec![],
                                     assignments: vec![],
@@ -1903,6 +1936,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: literal_word_vec!["echo", "while loop!"],
                                     redirects: vec![],
                                     assignments: vec![],
@@ -1936,6 +1970,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: literal_word_vec!["[", "foo", "=", "foo", "]"],
                                     redirects: vec![],
                                     assignments: vec![],
@@ -1949,6 +1984,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: literal_word_vec!["echo", "hello"],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -1961,6 +1997,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: literal_word_vec!["echo", "world"],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -2005,6 +2042,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: vec![
                                         lit!("["),
                                         param!("name", ExpansionOp::GetOrEmpty, false),
@@ -2023,6 +2061,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: literal_word_vec!["echo", "Hello,", "John!"],
                                     redirects: vec![],
                                     assignments: vec![],
@@ -2037,6 +2076,7 @@ pub fn test_compound_commands() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: vec![
                                                 lit!("["),
                                                 param!("name", ExpansionOp::GetOrEmpty, false),
@@ -2055,6 +2095,7 @@ pub fn test_compound_commands() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: literal_word_vec!["echo", "Hello,", "Mike!"],
                                             redirects: vec![],
                                             assignments: vec![],
@@ -2069,6 +2110,7 @@ pub fn test_compound_commands() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: vec![
                                                 lit!("["),
                                                 param!("name", ExpansionOp::GetOrEmpty, false),
@@ -2087,6 +2129,7 @@ pub fn test_compound_commands() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: literal_word_vec!["echo", "Hello,", "Emily!"],
                                             redirects: vec![],
                                             assignments: vec![],
@@ -2101,6 +2144,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: literal_word_vec!["echo", "Hello,", "stranger!"],
                                     redirects: vec![],
                                     assignments: vec![],
@@ -2134,6 +2178,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: literal_word_vec!["echo", "---------"],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -2146,6 +2191,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: vec![
                                             lit!("cowsay"),
                                             param!("arg", ExpansionOp::GetOrEmpty, false),
@@ -2195,6 +2241,7 @@ pub fn test_compound_commands() {
                                             pipelines: vec![Pipeline {
                                                 run_if: RunIf::Always,
                                                 commands: vec![Command::SimpleCommand {
+                                                    external: false,
                                                     argv: vec![lit!("sometimes-true")],
                                                     redirects: vec![],
                                                     assignments: vec![],
@@ -2227,6 +2274,7 @@ pub fn test_compound_commands() {
                                             pipelines: vec![Pipeline {
                                                 run_if: RunIf::Always,
                                                 commands: vec![Command::SimpleCommand {
+                                                    external: false,
                                                     argv: vec![lit!("sometimes-true")],
                                                     redirects: vec![],
                                                     assignments: vec![],
@@ -2254,6 +2302,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: vec![
                                                 lit!("something"),
                                             ],
@@ -2286,6 +2335,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: literal_word_vec!["echo", "hello"],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -2298,6 +2348,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: literal_word_vec!["echo", "world"],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -2327,6 +2378,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: literal_word_vec!["echo", "hello"],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -2339,6 +2391,7 @@ pub fn test_compound_commands() {
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
+                                        external: false,
                                         argv: literal_word_vec!["echo", "world"],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -2376,6 +2429,7 @@ pub fn test_compound_commands() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: literal_word_vec!["echo", "action", "is", "echo"],
                                             redirects: vec![],
                                             assignments: vec![],
@@ -2392,6 +2446,7 @@ pub fn test_compound_commands() {
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
+                                                external: false,
                                                 argv: literal_word_vec![
                                                     "echo", "action", "is", "date"
                                                 ],
@@ -2406,6 +2461,7 @@ pub fn test_compound_commands() {
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
+                                                external: false,
                                                 argv: literal_word_vec!["date"],
                                                 redirects: vec![],
                                                 assignments: vec![],
@@ -2440,6 +2496,7 @@ pub fn test_compound_commands() {
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
+                                                external: false,
                                                 argv: literal_word_vec!["echo", "hello"],
                                                 redirects: vec![],
                                                 assignments: vec![],
@@ -2452,6 +2509,7 @@ pub fn test_compound_commands() {
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
+                                                external: false,
                                                 argv: literal_word_vec!["echo", "world"],
                                                 redirects: vec![],
                                                 assignments: vec![],
@@ -2479,6 +2537,7 @@ pub fn test_compound_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: vec![lit!("func1")],
                             redirects: vec![],
                             assignments: vec![],
@@ -2544,6 +2603,7 @@ pub fn test_compound_commands() {
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
+                                                external: false,
                                                 argv: vec![
                                                     lit!("echo"),
                                                     Word(vec![Span::ArithExpr {
@@ -2579,6 +2639,7 @@ pub fn test_compound_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: vec![
                                 lit!("echo"),
                                 Word(vec![Span::Parameter {
@@ -2620,6 +2681,7 @@ pub fn test_compound_commands() {
                             pipelines: vec![Pipeline {
                                 run_if: RunIf::Always,
                                 commands: vec![Command::SimpleCommand {
+                                    external: false,
                                     argv: vec![
                                         Word(vec![Span::Literal("echo".into())]),
                                         Word(vec![Span::Parameter {
@@ -2651,6 +2713,7 @@ pub fn test_expansions() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("ls".into())]),
                             Word(vec![Span::Command {
@@ -2661,6 +2724,7 @@ pub fn test_expansions() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: vec![
                                                 Word(vec![Span::Literal("echo".into())]),
                                                 Word(vec![Span::Literal("-l".into())]),
@@ -2689,6 +2753,7 @@ pub fn test_expansions() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("ls".into())]),
                             Word(vec![Span::Command {
@@ -2699,6 +2764,7 @@ pub fn test_expansions() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: vec![
                                                 Word(vec![Span::Literal("echo".into())]),
                                                 Word(vec![Span::Literal("-l".into())]),
@@ -2727,6 +2793,7 @@ pub fn test_expansions() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Parameter {
@@ -2752,6 +2819,7 @@ pub fn test_expansions() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Parameter {
@@ -2782,6 +2850,7 @@ pub fn test_expansions() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             lit!("foo"),
                             Word(vec![Span::Parameter {
@@ -2816,6 +2885,7 @@ pub fn test_expansions() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Parameter {
@@ -2868,6 +2938,7 @@ pub fn test_expansions() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             lit!("echo"),
                             Word(vec![Span::Parameter {
@@ -3013,6 +3084,7 @@ pub fn test_tilde() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Tilde(None)]),
@@ -3044,6 +3116,7 @@ pub fn test_assign_like_prefix() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("./configure".into())]),
                             Word(vec![
@@ -3071,6 +3144,7 @@ pub fn test_arith_expr() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::ArithExpr {
@@ -3100,6 +3174,7 @@ pub fn test_arith_expr() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::ArithExpr {
@@ -3132,6 +3207,7 @@ pub fn test_arith_expr() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::ArithExpr {
                                 expr: Expr::Div(BinaryExpr {
@@ -3163,6 +3239,7 @@ pub fn test_patterns() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::AnyString { quoted: false }]),
@@ -3193,6 +3270,7 @@ pub fn test_comments() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["foo", "bar"],
                             redirects: vec![],
                             assignments: vec![],
@@ -3205,6 +3283,7 @@ pub fn test_comments() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
+                            external: false,
                             argv: literal_word_vec!["ls", "-G", "/tmp"],
                             redirects: vec![],
                             assignments: vec![],
@@ -3230,6 +3309,7 @@ pub fn test_string_literal() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![lit!("echo"), lit!("hello")],
                         assignments: vec![],
                         redirects: vec![],
@@ -3248,6 +3328,7 @@ pub fn test_string_literal() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             lit!("echo"),
                             lit!("-e"),
@@ -3271,6 +3352,7 @@ pub fn test_string_literal() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             lit!("echo"),
                             Word(vec![
@@ -3300,6 +3382,7 @@ pub fn test_escape_sequences() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             lit!("echo"),
                             lit!("\\e[1m"),
@@ -3343,6 +3426,7 @@ pub fn test_process_substitution() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![
                             Word(vec![Span::Literal("cat".into())]),
                             Word(vec![Span::ProcSubst {
@@ -3353,6 +3437,7 @@ pub fn test_process_substitution() {
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
+                                            external: false,
                                             argv: vec![
                                                 Word(vec![Span::Literal("echo".into())]),
                                                 Word(vec![Span::Literal("hello".into())]),
@@ -3427,6 +3512,7 @@ pub fn test_export_empty() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![lit!("export"), lit!("PATH=")],
                         redirects: vec![],
                         assignments: vec![],
@@ -3448,6 +3534,7 @@ pub fn test_grep() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![lit!("grep"), lit!("-q"), lit!("-e"),
                             Word(vec![Span::Literal("^[0-9][0-9]*".into()),
                                 Span::Literal("$".into())])
@@ -3489,6 +3576,7 @@ pub fn test_cond_test() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![lit!("["), lit!("!"), lit!("-f"), param!("FILELIST", ExpansionOp::GetOrEmpty, false), lit!("]")],
                         redirects: vec![],
                         assignments: vec![]
@@ -3524,6 +3612,28 @@ pub fn test_regex() {
 }
 
 #[test]
+pub fn test_external_command() {
+    assert_eq!(
+        parse("\\ls"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "\\ls".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        external: true,
+                        argv: vec![lit!("ls")],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        })
+    );
+}
+
+#[test]
 pub fn test_heredoc() {
     assert_eq!(
         parse(concat!(
@@ -3540,6 +3650,7 @@ pub fn test_heredoc() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![lit!("cat")],
                         redirects: vec![
                             Redirection {
@@ -3577,6 +3688,7 @@ pub fn test_heredoc() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
+                        external: false,
                         argv: vec![lit!("cat")],
                         redirects: vec![
                             Redirection {

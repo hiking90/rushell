@@ -35,7 +35,6 @@ fn parse_args(ctx: &mut InternalCommandContext) -> Option<(Arc<Vec<ArgOption>>, 
             }
             _ => {
                 writeln!(ctx.stderr, "{} does not support {} option.", ctx.argv[0], arg).ok();
-                return None;
             }
         }
     }
