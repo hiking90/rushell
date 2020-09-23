@@ -174,7 +174,7 @@ fn main() -> io::Result<()> {
             let prompt_display = if multiline.is_empty() {
                 prompt.main(&mut shell, &prompt::Condition::new())
             } else {
-                prompt.second(&mut shell, &prompt::Condition::new())
+                prompt.second(&mut shell)
             };
             interface.set_prompt(&prompt_display)?;
         }

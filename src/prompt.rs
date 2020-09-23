@@ -36,7 +36,7 @@ impl Condition {
 
 pub trait Prompt {
     fn main(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String;
-    fn second(&mut self, _shell: &mut shell::Shell, _condition: &Condition) -> String {
+    fn second(&mut self, _shell: &mut shell::Shell) -> String {
         let style = theme::default_theme().prompt_continue;
         format!("\x01{} ❯{}\x02 ",
             style.prefix(),
@@ -58,7 +58,7 @@ impl PowerLine {
     fn arrow_format(&self, style: Style, next: Option<Style>) -> String {
         let arrow_style = theme::Theme::arrow(style, next);
 
-        format!("{}\u{E0B0}{}",
+        format!("\x01{}\x02\u{E0B0}\x01{}\x02",
             arrow_style.prefix(),
             arrow_style.suffix(),
         )
@@ -93,11 +93,11 @@ impl PowerLine {
                 (None, String::new(), String::new())
             } else {
                 (Some(theme.path),
-                 format!("{} {} {}", theme.path.prefix(), git_root.display(), theme.path.suffix()),
+                 format!("\x01{}\x02 {} \x01{}\x02", theme.path.prefix(), git_root.display(), theme.path.suffix()),
                  self.arrow_format(theme.path_basename, None))
             };
 
-            format!("{} \u{E0A0} {}{} {}{}{}{}",
+            format!("\x01{}\x02 \u{E0A0} {}{} \x01{}\x02{}{}{}",
                 style.prefix(),
                 if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
                 if git.untracked {"?"} else {""},
@@ -111,7 +111,7 @@ impl PowerLine {
         };
 
         let host = if condition.remote_login {
-            format!("{} {}{}{}@{} {}{}",
+            format!("\x01{}\x02 {}\x01{}{}\x02@{} \x01{}\x02{}",
                 theme.username.prefix(),
                 condition.user,
                 theme.username.suffix(),
@@ -141,7 +141,7 @@ impl PowerLine {
 
         let style = theme.path(readonly);
 
-        let path = format!("{} {}{}",
+        let path = format!("\x01{}\x02 {}\x01{}\x02",
             style.prefix(),
             path,
             style.suffix(),
@@ -149,7 +149,7 @@ impl PowerLine {
 
         let style = theme.basename(readonly);
 
-        let base = format!("{}{} {}",
+        let base = format!("\x01{}\x02{} \x01{}\x02",
             style.prefix(),
             basename,
             style.suffix(),
@@ -165,12 +165,12 @@ impl PowerLine {
 
 impl Prompt for PowerLine {
     fn main(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String {
-        format!("\x01{}\x02 ", self.build(shell, condition, &theme::nord_theme()))
+        format!("{} ", self.build(shell, condition, &theme::nord_theme()))
     }
 
-    fn second(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String {
-        let normal = self.build(shell, condition, &theme::plain_theme());
-        " ".repeat(normal.chars().count() + 1)
+    fn second(&mut self, shell: &mut shell::Shell) -> String {
+        let linefeed = shell.linefeed().expect("linefeed is invalid.");
+        " ".repeat(linefeed.prompt_len())
     }
 }
 
@@ -198,7 +198,7 @@ impl Prompt for Default {
         }
 
         let host_prompt = if condition.remote_login {
-            format!("{}{}{}{}@{}{} ",
+            format!("\x01{}\x02{}\x01{}{}\x02@{}\x01{}\x02 ",
                 theme.username.prefix(), condition.user, theme.username.suffix(),
                 theme.hostname.prefix(), condition.host, theme.hostname.suffix(),
             )
@@ -215,7 +215,7 @@ impl Prompt for Default {
                 theme.repo
             };
 
-            format!("on \x01{}\u{E0A0} {} [{}{}]{}\x02",
+            format!("on \x01{}\x02\u{E0A0} {} [{}{}]\x01{}\x02",
                 git_style.prefix(),
                 git.branch,
                 if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
@@ -236,7 +236,7 @@ impl Prompt for Default {
         let path_style = theme.path(readonly);
         let style = theme::default_theme().prompt;
 
-        format!("\n \x01{host}{path_prefix}{path}{path_suffix} {git}\n{prefix}{prompt}{suffix}\x02",
+        format!("\n {host}\x01{path_prefix}\x02{path}\x01{path_suffix}\x02 {git}\n\x01{prefix}\x02{prompt}\x01{suffix}\x02",
             host = host_prompt,
             path_prefix = path_style.prefix(),
             path = path,
