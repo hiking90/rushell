@@ -34,12 +34,12 @@ impl Word {
         self.start == self.end
     }
 
-    pub fn is_progress(&self) -> bool {
-        match self.quoted {
-            Quoted::Progress(_) => true,
-            _ => self.escaped,
-        }
-    }
+    // pub fn is_progress(&self) -> bool {
+    //     match self.quoted {
+    //         Quoted::Progress(_) => true,
+    //         _ => self.escaped,
+    //     }
+    // }
 
     fn push(&mut self, idx: usize, ch: char) -> bool {
         if self.escaped == true {

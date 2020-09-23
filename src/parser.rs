@@ -1494,13 +1494,23 @@ impl ShellParser {
                         ref positives,
                         ref negatives,
                     } => if negatives.is_empty() && positives.is_empty() == false {
-                        let expected_rules = vec![Rule::command, Rule::normal_newline];
                         let mut expected = false;
 
-                        for rule in positives {
-                            if expected_rules.contains(&rule) {
-                                expected = true;
-                                break;
+                        let size = match err.location {
+                            pest::error::InputLocation::Pos(size) => size,
+                            _ => 0,
+                        };
+                        if size == script.chars().count() {
+                            let expected_rules = vec![
+                                Rule::command,
+                                Rule::normal_newline,
+                                Rule::literal_in_double_quoted_span,
+                            ];
+                            for rule in positives {
+                                if expected_rules.contains(&rule) {
+                                    expected = true;
+                                    break;
+                                }
                             }
                         }
 

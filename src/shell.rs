@@ -7,7 +7,7 @@ use crate::completer;
 use crate::completion::ArgOption;
 use nix;
 use nix::sys::termios::{tcgetattr, Termios};
-use nix::unistd::{getpid, Pid, setpgid, tcgetpgrp};
+use nix::unistd::{getpid, Pid, tcgetpgrp};
 use std::collections::{HashMap, HashSet, BTreeMap, hash_map, btree_map};
 use std::fmt;
 use std::fs::File;

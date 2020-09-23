@@ -667,26 +667,30 @@ fn run_pipeline(
                 Some(ExitStatus::Running(pid))
             }
             Ok(ExitStatus::ExitedWith(status)) => Some(ExitStatus::ExitedWith(status)),
-            Ok(ExitStatus::Break) => {
-                last_result = Some(ExitStatus::Break);
+            Ok(status) => {
+                last_result = Some(status);
                 break;
             }
-            Ok(ExitStatus::Continue) => {
-                last_result = Some(ExitStatus::Continue);
-                break;
-            }
-            Ok(ExitStatus::Return) => {
-                last_result = Some(ExitStatus::Return);
-                break;
-            }
-            Ok(ExitStatus::NoExec) => {
-                last_result = Some(ExitStatus::NoExec);
-                break;
-            }
-            Ok(ExitStatus::Expected) => {
-                last_result = Some(ExitStatus::Expected);
-                break;
-            }
+            // Ok(ExitStatus::Break) => {
+            //     last_result = Some(ExitStatus::Break);
+            //     break;
+            // }
+            // Ok(ExitStatus::Continue) => {
+            //     last_result = Some(ExitStatus::Continue);
+            //     break;
+            // }
+            // Ok(ExitStatus::Return) => {
+            //     last_result = Some(ExitStatus::Return);
+            //     break;
+            // }
+            // Ok(ExitStatus::NoExec) => {
+            //     last_result = Some(ExitStatus::NoExec);
+            //     break;
+            // }
+            // Ok(ExitStatus::Expected) => {
+            //     last_result = Some(ExitStatus::Expected);
+            //     break;
+            // }
             Err(err) => {
                 if err
                     .find_root_cause()
