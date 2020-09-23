@@ -1,6 +1,6 @@
 const SPACES: &str = " \t\n";
 const QUOTE_CHARS: &str = "\"'`";
-pub const ESCAPED_CHARS: &str = "\"\'`$\\";
+pub const ESCAPED_CHARS: &str = "\"`$\\";
 // const PART_BREAK_CHARS: &str = "@$><=;|&{(/";
 
 #[derive(Debug, Clone)]

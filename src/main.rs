@@ -38,6 +38,8 @@ mod git;
 mod prompt;
 mod completion;
 mod input;
+#[cfg(test)]
+mod script_test;
 
 // use crate::prompt::Prompt;
 use crate::variable::Value;
