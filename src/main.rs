@@ -47,12 +47,14 @@ use linefeed::{Interface, ReadResult};
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use nix::unistd;
 use std::fs;
+use std::io::prelude::*;
 use std::io;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
+const PROMPT_STYLE: &str = "PROMPT_STYLE";
 
 fn main() -> io::Result<()> {
     pretty_env_logger::init();
@@ -63,9 +65,6 @@ fn main() -> io::Result<()> {
     let mutex_shell = Arc::new(Mutex::new(shell::Shell::new()));
     // let mut shell = shell::Shell::new(command_scanner.clone());
 
-    // TODO: It should be removed when Rushell will achieve alpha or beta product quality.
-    let mut release_mode = false;
-
     let mut iter = std::env::args();
 
     iter.next();    // Skip command name.
@@ -74,7 +73,6 @@ fn main() -> io::Result<()> {
         shell.scan_commands();
         while let Some(arg) = iter.next() {
             match arg.as_str() {
-                "--release" => release_mode = true,
                 "-c" => {
                     let mut command = String::new();
                     while let Some(arg) = iter.next() {
@@ -110,7 +108,9 @@ fn main() -> io::Result<()> {
     let init_file = conf_dir.join("init.sh");
 
     if init_file.exists() == false {
-        fs::File::create(&init_file).ok();
+        let mut f = fs::File::create(&init_file)?;
+        f.write_fmt(format_args!("{}=basic\n", PROMPT_STYLE))?;
+        f.write_fmt(format_args!("# {}=power\n", PROMPT_STYLE))?;
     }
 
     if fs::create_dir_all(&conf_dir).is_ok() {
@@ -133,6 +133,7 @@ fn main() -> io::Result<()> {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
+    let mut prompt_style = String::from("basic");
     if let Ok(mut shell) = mutex_shell.lock() {
         shell.set_linefeed(interface.clone());
 
@@ -155,6 +156,10 @@ fn main() -> io::Result<()> {
 
         shell.run_file(init_file).ok();
 
+        if let Some(var) = shell.get(PROMPT_STYLE) {
+            prompt_style = var.as_str().into();
+        }
+
         let stdin = std::fs::File::create("/dev/tty").unwrap();
         shell.set_interactive(unistd::isatty(stdin.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
     }
@@ -162,10 +167,10 @@ fn main() -> io::Result<()> {
     let mut prompt = if let Some(prompt) = prompt::PromptCommand::new() {
         Box::new(prompt) as Box<dyn prompt::Prompt>
     } else {
-        if release_mode {
-            Box::new(prompt::Default::new()) as Box<dyn prompt::Prompt>
-        } else {
+        if prompt_style == "power" {
             Box::new(prompt::PowerLine::new()) as Box<dyn prompt::Prompt>
+        } else {
+            Box::new(prompt::Default::new()) as Box<dyn prompt::Prompt>
         }
     };
     let mut multiline = String::new();
