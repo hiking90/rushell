@@ -101,25 +101,3 @@ pub fn nord_theme() -> Theme {
         username: Color::RGB(0x25, 0x5e, 0x87).on(Color::RGB(0xcc, 0xcc, 0xcc)).bold(),
     }
 }
-
-pub fn plain_theme() -> Theme {
-    let normal = Style::default();
-    Theme {
-        prompt: normal,
-        prompt_continue: normal,
-
-        path: normal,
-        path_debug: normal,
-        path_basename: normal,
-        path_nowrite: normal,
-        path_nowrite_basename: normal,
-
-        repo: normal,
-        repo_work_tree: normal,
-        repo_dirty: normal,
-        repo_staged: normal,
-
-        hostname: normal,
-        username: normal,
-    }
-}
