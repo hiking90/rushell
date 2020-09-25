@@ -14,13 +14,9 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
             let dir = if let Some(dir) = opts.dir {
-                dir
+                std::path::PathBuf::from(dir)
             } else {
-                std::env::current_dir()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_owned()
+                std::env::current_dir().expect("failed to getcwd()")
             };
 
             ctx.shell.pushd(dir);

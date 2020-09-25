@@ -5,6 +5,7 @@ use crate::process::{ExitStatus, Job, JobId, ProcessState, set_terminal_process_
 use crate::variable::{Frame, Value, Variable};
 use crate::completer;
 use crate::completion::ArgOption;
+use crate::utils;
 use nix;
 use nix::sys::termios::{tcgetattr, Termios};
 use nix::unistd::{getpid, Pid, tcgetpgrp};
@@ -12,6 +13,7 @@ use std::collections::{HashMap, HashSet, BTreeMap, hash_map, btree_map};
 use std::fmt;
 use std::fs::File;
 use std::io;
+use std::io::Result;
 use std::io::prelude::*;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
@@ -58,7 +60,7 @@ pub struct Shell {
     /// The mapping from a pid (not job's pgid) to its job.
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
     /// A stack of pathes maintained by pushd(1) / popd(1).
-    cd_stack: Vec<String>,
+    cd_stack: Vec<PathBuf>,
 
     // TODO: Remove this field or make it private.
     pub last_fore_job: Option<Arc<Job>>,
@@ -275,12 +277,48 @@ impl Shell {
         self.aliases.get(&alias.to_string()).cloned()
     }
 
-    pub fn pushd(&mut self, path: String) {
+    pub fn pushd(&mut self, path: PathBuf) {
         self.cd_stack.push(path);
     }
 
-    pub fn popd(&mut self) -> Option<String> {
+    pub fn popd(&mut self) -> Option<PathBuf> {
         self.cd_stack.pop()
+    }
+
+    pub fn set_current_dir(&mut self, dir: Option<PathBuf>) -> Result<()> {
+        let current = std::env::current_dir()?;
+        if let Some(dir) = current.to_str() {
+            self.set("OLDPWD", Value::String(dir.into()), false);
+        }
+
+        let mut dir = match dir {
+            Some(dir) => {
+                let dir = dir.canonicalize()?;
+                if current == dir {
+                    return Ok(());
+                }
+                std::env::set_current_dir(&dir)?;
+                dir
+            }
+            None => current,
+        };
+
+        if let Some(dir) = dir.to_str() {
+            self.set("PWD", Value::String(dir.into()), false);
+            // if let Some(linefeed) = &self.linefeed {
+            //     write!(linefeed, "\x1b]1337;CurrentDir={}\x07", dir.to_owned()).ok();
+            // }
+        }
+
+        if let Ok(strip_home) = dir.strip_prefix(&utils::home_dir()) {
+            dir = PathBuf::from("~").join(strip_home);
+        }
+
+        if let Some(dir) = dir.to_str() {
+            self.set_title(dir);
+        }
+
+        Ok(())
     }
 
     pub fn get_var_as_i32(&self, name: &str) -> Option<i32> {
@@ -435,5 +473,11 @@ impl Shell {
 
     pub fn get_completion(&self, command: &str) -> Option<&Arc<Vec<ArgOption>>> {
         self.completion.get(command)
+    }
+
+    pub fn set_title(&self, title: &str) {
+        if let Some(linefeed) = &self.linefeed {
+            write!(linefeed, "\x1b]0;{}\x07", title).ok();
+        }
     }
 }

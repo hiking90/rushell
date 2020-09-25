@@ -1,7 +1,8 @@
 use crate::builtins::InternalCommandContext;
 use crate::process::ExitStatus;
+use crate::utils;
 use std::io::Write;
-use std::path::Path;
+use std::path::PathBuf;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("cd: argv={:?}", ctx.argv);
@@ -10,32 +11,31 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         Some(dir) => {
             if dir.starts_with('/') {
                 // absolute path
-                dir.clone()
+                PathBuf::from(dir)
             } else {
                 // relative path
-                Path::new(&old_dir)
-                    .join(dir.clone())
-                    .to_string_lossy()
-                    .into_owned()
+                PathBuf::from(&old_dir).join(dir)
+                // Path::new(&old_dir)
+                //     .join(dir.clone())
+                //     .to_string_lossy()
+                //     .into_owned()
             }
         }
         None => {
             // called with no arguments; defaults to the home directory
-            if let Some(home_dir) = dirs::home_dir() {
-                home_dir.to_string_lossy().into_owned()
-            } else {
-                String::from("/")
-            }
+            utils::home_dir()
         }
     };
 
     // TODO: make this configurable
-    ctx.shell.pushd(old_dir.to_str().unwrap().to_owned());
+    ctx.shell.pushd(old_dir);
 
-    match std::env::set_current_dir(&dir) {
-        Ok(_) => ExitStatus::ExitedWith(0),
+    match ctx.shell.set_current_dir(Some(dir.clone())) {
+        Ok(_) => {
+            ExitStatus::ExitedWith(0)
+        }
         Err(err) => {
-            writeln!(ctx.stderr, "rushell: cd: {}: `{}'", err, dir).ok();
+            writeln!(ctx.stderr, "rushell: cd: {}: `{}'", err, dir.display()).ok();
             ExitStatus::ExitedWith(1)
         }
     }

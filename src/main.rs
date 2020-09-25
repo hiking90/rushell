@@ -162,6 +162,7 @@ fn main() -> io::Result<()> {
 
         let stdin = std::fs::File::create("/dev/tty").unwrap();
         shell.set_interactive(unistd::isatty(stdin.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
+        shell.set_current_dir(None)?;
     }
 
     let mut prompt = if let Some(prompt) = prompt::PromptCommand::new() {
@@ -183,7 +184,7 @@ fn main() -> io::Result<()> {
             } else {
                 prompt.second(&mut shell)
             };
-            interface.set_prompt(&prompt_display)?;
+            interface.set_prompt(&prompt_display).ok();
         }
 
         let readline = interface.read_line()?;
@@ -216,7 +217,7 @@ fn main() -> io::Result<()> {
                     multiline = String::new();
                 }
                 _ => {
-                    writeln!(shell, "BYE BYE!")?;
+                    writeln!(shell, "Good Bye!")?;
                     break;
                 }
             }

@@ -10,10 +10,10 @@ struct Opt {}
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     match Opt::from_iter_safe(ctx.argv) {
         Ok(_opts) => match ctx.shell.popd() {
-            Some(dir) => match std::env::set_current_dir(&dir) {
+            Some(dir) => match ctx.shell.set_current_dir(Some(dir.clone())) {
                 Ok(_) => ExitStatus::ExitedWith(0),
                 Err(err) => {
-                    writeln!(ctx.stderr, "rushell: popd: {}: `{}'", err, dir).ok();
+                    writeln!(ctx.stderr, "rushell: popd: {}: `{}'", err, dir.display()).ok();
                     ExitStatus::ExitedWith(1)
                 }
             },
