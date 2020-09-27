@@ -27,10 +27,11 @@ Use PROMPT_STYLE environment in $HOME/.config/rushell/init.sh
 
 ![basic prompt](https://raw.githubusercontent.com/hiking90/rushell/master/prompt_basic_screenshot.png)
 
+<!--
 And, if you want to use external prompt tool like starship, you can use PROMPT_COMMAND environment in init.sh.
 
 `PROMPT_COMMAND="startship prompt"`
-
+ -->
 
 ## Related Open Source
 `rushell` was started from nsh(https://github.com/nuta/nsh).

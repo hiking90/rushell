@@ -1,6 +1,7 @@
 [package]
 name = "rushell"
 version = "0.1.0"
+description = "`rushell` is a POSIX compatible shell written by Rust language for Linux and MacOS."
 authors = ["Jeff Kim <hiking90@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -16,9 +17,9 @@ nix = "0.18.0"
 pest = "2.1.0"
 pest_derive = "2.1.0"
 ansi_term = "0.12"
-# linefeed = { package="linefeed-rushell", path = "../linefeed", version = "0.6.0"}
-linefeed = { package="linefeed-rushell", version = "0.6.0", git = "https://github.com/hiking90/linefeed-rushell" }
-dirs = "3"
+# linefeed = { package="rushell_deps_linefeed", path = "../linefeed", version = "0.6.0"}
+linefeed = { package="rushell_deps_linefeed", version = "0.6.0", git = "https://github.com/hiking90/rushell_deps_linefeed" }
+dirs = "2"
 failure = "0"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_warn"] }
 pretty_env_logger = "0.4"

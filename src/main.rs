@@ -134,6 +134,7 @@ fn main() -> io::Result<()> {
     }
 
     let mut prompt_style = String::from("basic");
+    let mut prompt_command = None;
     if let Ok(mut shell) = mutex_shell.lock() {
         shell.set_linefeed(interface.clone());
 
@@ -160,12 +161,14 @@ fn main() -> io::Result<()> {
             prompt_style = var.as_str().into();
         }
 
+        prompt_command = prompt::PromptCommand::new(&shell);
+
         let stdin = std::fs::File::create("/dev/tty").unwrap();
         shell.set_interactive(unistd::isatty(stdin.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
         shell.set_current_dir(None)?;
     }
 
-    let mut prompt = if let Some(prompt) = prompt::PromptCommand::new() {
+    let mut prompt = if let Some(prompt) = prompt_command {
         Box::new(prompt) as Box<dyn prompt::Prompt>
     } else {
         if prompt_style == "power" {

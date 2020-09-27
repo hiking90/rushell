@@ -254,10 +254,10 @@ pub struct PromptCommand {
 }
 
 impl PromptCommand {
-    pub fn new() -> Option<PromptCommand> {
-        if let Some(command) = env::var_os("PROMPT_COMMAND") {
+    pub fn new(shell: &shell::Shell) -> Option<PromptCommand> {
+        if let Some(command) = shell.get("PROMPT_COMMAND") {
             Some(PromptCommand{
-                command: command.into_string().ok()?,
+                command: command.as_str().into(),
             })
         } else {
             None
