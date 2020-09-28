@@ -2,7 +2,7 @@ use crate::eval::eval;
 use crate::linefeed::{DefaultTerminal, Interface};
 use crate::parser;
 use crate::process::{ExitStatus, Job, JobId, ProcessState, set_terminal_process_group};
-use crate::variable::{Frame, Value, Variable};
+use crate::variable::{self, Frame, Value, Variable};
 use crate::completer;
 use crate::completion::ArgOption;
 use crate::utils;
@@ -182,6 +182,12 @@ impl Shell {
         self.set(key, value, defined_as_local);
     }
 
+    #[inline]
+    pub fn assign_append(&mut self, key: &str, value: Value) {
+        let defined_as_local = self.current_frame().get(key).is_some();
+        self.append(key, value, defined_as_local);
+    }
+
     pub fn define(&mut self, key: &str, is_local: bool) {
         let frame = if is_local {
             self.current_frame_mut()
@@ -212,6 +218,42 @@ impl Shell {
             // $PATH is being updated. Reload directories.
             if let Value::String(ref path) = value {
                 std::env::set_var("PATH", path);
+            }
+        }
+    }
+
+    pub fn append(&mut self, key: &str, append_value: Value, is_local: bool) {
+        let frame = if is_local {
+            self.current_frame_mut()
+        } else {
+            &mut self.global
+        };
+
+        if let Some(variable) = frame.get(key) {
+            match variable.value() {
+                Some(Value::String(elem)) => {
+                    frame.set(key, Value::String(format!("{}{}", elem, variable::value_as_str(&Some(append_value)))));
+                }
+                Some(Value::Array(elems)) => {
+                    match append_value {
+                        Value::String(value) => {
+                            let mut elems = elems.clone();
+                            if let Some(elem) = elems.get_mut(0) {
+                                elem.push_str(&value);
+                            } else {
+                                elems.push(value.to_owned());
+                            }
+                            frame.set(key, Value::Array(elems));
+                        },
+                        Value::Array(append_elems) => {
+                            let mut elems = elems.clone();
+                            elems.extend(append_elems);
+                            frame.set(key, Value::Array(elems));
+                        },
+                        _ => {},
+                    }
+                }
+                _ => {}
             }
         }
     }

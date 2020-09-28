@@ -128,7 +128,8 @@ string_initializer = { word }
 array_initializer = !{ ("(" ~ word* ~ ")") }
 empty_initializer = { WHITESPACE* }
 
-assignment = ${ var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
+assignment_op = { "=" | "+=" }
+assignment = ${ var_name ~ index ~ assignment_op ~ initializer ~ WHITESPACE? }
 assignment_command = { assignment+ }
 
 //

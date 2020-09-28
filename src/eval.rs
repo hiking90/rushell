@@ -271,10 +271,14 @@ fn run_local_command(
         for decl in declarations {
             match decl {
                 LocalDeclaration::Assignment(Assignment {
-                    name, initializer, ..
+                    name, initializer, index: _, append,
                 }) => {
                     let value = evaluate_initializer(shell, &initializer)?;
-                    shell.set(&name, value, true)
+                    if *append == false {
+                        shell.set(&name, value, true)
+                    } else {
+                        shell.append(&name, value, true)
+                    }
                 }
                 LocalDeclaration::Name(name) => shell.define(name, true),
             }
@@ -328,6 +332,18 @@ fn run_case_command(
     cases: &[parser::CaseItem],
 ) -> Result<ExitStatus> {
     let word = expand_word_into_string(shell, word)?;
+    // Find the exact match first.
+    for case in cases {
+        for pattern in &case.patterns {
+            let pattern = expand_word_into_string(shell, pattern)?;
+            if pattern == word {
+                return Ok(run_terms(
+                    shell, &case.body, ctx.stdin, ctx.stdout, ctx.stderr,
+                ));
+            }
+        }
+    }
+    // If there is no exact matched pattern, find regular expression match.
     for case in cases {
         for pattern in &case.patterns {
             let pattern = expand_into_single_pattern_word(shell, &pattern)?;
@@ -464,7 +480,11 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
         parser::Command::Assignment { assignments } => {
             for assign in assignments {
                 let value = evaluate_initializer(shell, &assign.initializer)?;
-                shell.assign(&assign.name, value)
+                if assign.append {
+                    shell.assign_append(&assign.name, value)
+                } else {
+                    shell.assign(&assign.name, value)
+                }
             }
             ExitStatus::ExitedWith(0)
         }

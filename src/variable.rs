@@ -10,6 +10,19 @@ pub enum Value {
     Function(Box<parser::Command>),
 }
 
+pub fn value_as_str(value: &Option<Value>) -> &str {
+    match value {
+        Some(Value::String(value)) => value,
+        Some(Value::Function(_)) => "(function)",
+        // Bash returns the first element in the array.
+        Some(Value::Array(elems)) => match elems.get(0) {
+            Some(elem) => elem.as_str(),
+            _ => "",
+        },
+        None => "",
+    }
+}
+
 /// A shell variable.
 #[derive(Debug)]
 pub struct Variable {
@@ -39,16 +52,7 @@ impl Variable {
 
     /// References its value as `$foo`.
     pub fn as_str(&self) -> &str {
-        match &self.value {
-            Some(Value::String(value)) => value,
-            Some(Value::Function(_)) => "(function)",
-            // Bash returns the first element in the array.
-            Some(Value::Array(elems)) => match elems.get(0) {
-                Some(elem) => elem.as_str(),
-                _ => "",
-            },
-            None => "",
-        }
+        value_as_str(&self.value)
     }
 
     /// References its value as `$foo[expr]`.

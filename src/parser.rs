@@ -67,6 +67,7 @@ pub struct Assignment {
     pub name: String,
     pub initializer: Initializer,
     pub index: Option<Expr>,
+    pub append: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -674,7 +675,7 @@ impl ShellParser {
         s
     }
 
-    fn visite_literal_span (&mut self, pair: Pair<Rule>) -> String {
+    fn visit_literal_span (&mut self, pair: Pair<Rule>) -> String {
         let mut s = String::new();
 
         for ch in pair.into_inner() {
@@ -848,7 +849,7 @@ impl ShellParser {
                     spans.push(Span::LiteralChars(chars));
                 }
                 Rule::literal_span if !literal_chars => {
-                    spans.push(Span::Literal(self.visite_literal_span(span)));
+                    spans.push(Span::Literal(self.visit_literal_span(span)));
                 }
                 Rule::double_quoted_span => {
                     for span_in_quote in span.into_inner() {
@@ -977,6 +978,7 @@ impl ShellParser {
             .into_inner()
             .next()
             .map(|p| self.visit_expr(p));
+        let append = inner.next().unwrap().as_span().as_str() == "+=";
         let initializer = inner.next().unwrap().into_inner().next().unwrap();
         match initializer.as_rule() {
             Rule::string_initializer => {
@@ -986,6 +988,7 @@ impl ShellParser {
                     name,
                     initializer: word,
                     index,
+                    append: append,
                 }
             }
             Rule::array_initializer => {
@@ -1000,12 +1003,14 @@ impl ShellParser {
                     name,
                     initializer: word,
                     index,
+                    append: append,
                 }
             }
             Rule::empty_initializer => Assignment {
                 name,
                 initializer: Initializer::String(Word(Vec::new())),
                 index,
+                append: append,
             },
             _ => unreachable!(),
         }
@@ -1818,6 +1823,7 @@ pub fn test_simple_commands() {
                                     "1234".into()
                                 )])),
                                 index: None,
+                                append: false,
                             },
                             Assignment {
                                 name: "RAILS_ENV".into(),
@@ -1825,6 +1831,7 @@ pub fn test_simple_commands() {
                                     "production".into()
                                 )])),
                                 index: None,
+                                append: false,
                             }
                         ],
                     }],
@@ -2569,6 +2576,7 @@ pub fn test_compound_commands() {
                         run_if: RunIf::Always,
                         commands: vec![Command::Assignment {
                             assignments: vec![Assignment {
+                                append: false,
                                 name: "x".into(),
                                 initializer: Initializer::String(Word(vec![Span::ArithExpr {
                                     expr: Expr::Literal(123)
@@ -2600,6 +2608,7 @@ pub fn test_compound_commands() {
                                                             vec![Span::Literal("456".into())]
                                                         )),
                                                         index: None,
+                                                        append: false,
                                                     }),
                                                     LocalDeclaration::Name("y".into()),
                                                     LocalDeclaration::Name("z".into())
@@ -2975,6 +2984,55 @@ pub fn test_expansions() {
 }
 
 #[test]
+pub fn test_append() {
+    assert_eq!(
+        parse("a+=abc"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "a+=abc".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Assignment {
+                        assignments: vec![Assignment {
+                            name: "a".into(),
+                            initializer: Initializer::String(Word(vec![Span::Literal("abc".into())])),
+                            index: None,
+                            append: true,
+                        }],
+                    }],
+                }],
+            }],
+        })
+    );
+
+    assert_eq!(
+        parse("a+=( k i n g )"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "a+=( k i n g )".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Assignment {
+                        assignments: vec![Assignment {
+                            name: "a".into(),
+                            initializer: Initializer::Array(
+                                vec![Word(vec![Span::Literal("k".into())]),
+                                     Word(vec![Span::Literal("i".into())]),
+                                     Word(vec![Span::Literal("n".into())]),
+                                     Word(vec![Span::Literal("g".into())])]),
+                            index: None,
+                            append: true,
+                        }],
+                    }],
+                }],
+            }],
+        })
+    );
+}
+
+#[test]
 pub fn test_assignments() {
     assert_eq!(
         parse("foo=bar"),
@@ -2991,6 +3049,7 @@ pub fn test_assignments() {
                                 "bar".into()
                             )])),
                             index: None,
+                            append: false,
                         }],
                     }],
                 }],
@@ -3016,6 +3075,7 @@ pub fn test_assignments() {
                                 Word(vec![Span::Literal("spam spam beans spam".into())]),
                             ]),
                             index: None,
+                            append: false,
                         }],
                     }],
                 }],
@@ -3044,6 +3104,7 @@ pub fn test_assignments() {
                                     rhs: Box::new(Expr::Parameter { name: "c".into() }),
                                 }))
                             })),
+                            append: false,
                         }],
                     }],
                 }],
@@ -3066,14 +3127,16 @@ pub fn test_assignments() {
                                 initializer: Initializer::String(Word(vec![Span::Literal(
                                     "expects".into()
                                 )])),
-                                index: None
+                                index: None,
+                                append: false,
                             },
                             Assignment {
                                 name: "the".into(),
                                 initializer: Initializer::String(Word(vec![Span::Literal(
                                     "spanish inquisition".into()
                                 )])),
-                                index: None
+                                index: None,
+                                append: false,
                             },
                         ],
                     }],
@@ -3487,6 +3550,7 @@ pub fn test_cond_ex() {
                                 name: "hello".into(),
                                 initializer: Initializer::String(lit!("world")),
                                 index: None,
+                                append: false,
                             }],
                         }],
                     }],
