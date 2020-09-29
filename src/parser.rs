@@ -2,7 +2,6 @@ use ansi_term::Colour;
 use pest::iterators::Pair;
 use pest::{Parser, error};
 use std::os::unix::io::RawFd;
-use crate::utils;
 use crate::input::{ESCAPED_CHARS};
 
 #[derive(Parser)]
@@ -675,32 +674,6 @@ impl ShellParser {
         s
     }
 
-    fn visit_literal_span (&mut self, pair: Pair<Rule>) -> String {
-        let mut s = String::new();
-
-        for ch in pair.into_inner() {
-            match ch.as_rule() {
-                Rule::escaped_char => {
-                    let lit_ch = ch.as_str().chars().nth(1).unwrap();
-                    s.push(lit_ch)
-                }
-                Rule::unescaped_char => {
-                    let lit_ch = ch.as_str().chars().nth(0).unwrap();
-                    s.push(lit_ch)
-                }
-                Rule::tilde_char => {
-                    let mut chars = ch.as_str().chars();
-                    s.push(chars.nth(0).unwrap());
-                    s.push_str(utils::home_dir().to_str().unwrap());
-                }
-                Rule::silent_char => {}
-                _ => unreachable!(),
-            }
-        }
-
-        s
-    }
-
     fn visit_cond_primary(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
         let mut inner = pair.into_inner();
         let primary = inner.next().unwrap();
@@ -812,6 +785,14 @@ impl ShellParser {
         Command::Cond{is_not: is_not, expr: expr}
     }
 
+    fn visit_tilde(&mut self, pair: Pair<Rule>) -> Span {
+        let username = pair
+            .into_inner()
+            .next()
+            .map(|p| p.as_span().as_str().to_owned());
+        Span::Tilde(username)
+    }
+
     // word = ${ (tilde_span | span) ~ span* }
     // span = _{
     //     double_quoted_span
@@ -849,7 +830,31 @@ impl ShellParser {
                     spans.push(Span::LiteralChars(chars));
                 }
                 Rule::literal_span if !literal_chars => {
-                    spans.push(Span::Literal(self.visit_literal_span(span)));
+                    let mut s = String::new();
+
+                    for ch in span.into_inner() {
+                        match ch.as_rule() {
+                            Rule::escaped_char => {
+                                let lit_ch = ch.as_str().chars().nth(1).unwrap();
+                                s.push(lit_ch)
+                            }
+                            Rule::unescaped_char => {
+                                let lit_ch = ch.as_str().chars().nth(0).unwrap();
+                                s.push(lit_ch)
+                            }
+                            Rule::tilde_char => {
+                                s.push(ch.as_str().chars().nth(0).unwrap());
+                                spans.push(Span::Literal(s));
+                                s = String::new();
+                                spans.push(self.visit_tilde(ch.into_inner().next().unwrap()));
+                            }
+                            Rule::silent_char => {}
+                            _ => unreachable!(),
+                        }
+                    }
+                    if s.is_empty() == false {
+                        spans.push(Span::Literal(s));
+                    }
                 }
                 Rule::double_quoted_span => {
                     for span_in_quote in span.into_inner() {
@@ -894,13 +899,7 @@ impl ShellParser {
                 Rule::backtick_span => spans.push(self.visit_command_span(span, false)),
                 Rule::command_span => spans.push(self.visit_command_span(span, false)),
                 Rule::proc_subst_span => spans.push(self.visit_proc_subst_span(span)),
-                Rule::tilde_span => {
-                    let username = span
-                        .into_inner()
-                        .next()
-                        .map(|p| p.as_span().as_str().to_owned());
-                    spans.push(Span::Tilde(username));
-                }
+                Rule::tilde_span => spans.push(self.visit_tilde(span)),
                 Rule::any_string_span => {
                     spans.push(Span::AnyString { quoted: false });
                 }
@@ -3193,9 +3192,11 @@ pub fn test_assign_like_prefix() {
                         argv: vec![
                             Word(vec![Span::Literal("./configure".into())]),
                             Word(vec![
-                                Span::Literal(format!("--prefix={}/usr", utils::home_dir().display()).into())
+                                Span::Literal("--prefix=".into()), Span::Tilde(None), Span::Literal("/usr".into()),
                             ]),
-                            Word(vec![Span::Literal(format!("invalid={}", utils::home_dir().display()).into())]),
+                            Word(vec![
+                                Span::Literal("invalid=".into()), Span::Tilde(None),
+                            ]),
                         ],
                         redirects: vec![],
                         assignments: vec![],

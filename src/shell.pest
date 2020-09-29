@@ -75,9 +75,9 @@ span = _{
 }
 escaped_char = { "\\" ~ ANY }
 unescaped_char = { word_char }
-tilde_char = { (":" | "=") ~ "~" }
+tilde_char = ${ (":" | "=") ~ tilde_span }
 literal_span = ${ (tilde_char | silent_char | escaped_char | unescaped_char)+ }
-tilde_span = { "~" ~ username? }
+tilde_span = ${ "~" ~ username? }
 any_string_span = { "*" }
 any_char_span = { "?" }
 command_span = !{ "$(" ~ compound_list ~ ")" }
