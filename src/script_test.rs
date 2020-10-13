@@ -8,7 +8,7 @@ use crate::variable::Value;
 
 use nix::unistd::{close, pipe};
 
-
+#[cfg(test)]
 fn equal_script(script: &str, expect: &str) {
     let mut shell = shell::Shell::new();
 

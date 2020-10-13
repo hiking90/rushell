@@ -11,8 +11,8 @@ silent_char = _{ "\\\n" }
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_char = _{
     !(
-        "|" | "&" | ";" | " " | "\t" | "\r" | "\n" | "`"
-        | "{" | "}" | "<" | ">" | "(" | ")" | "$" | "\"" | "'" | "*" | "?"
+        "|" | "&" | ";" | " " | "\t" | "\r" | "\n" | "`" |
+        "{" | "}" | "<" | ">" | "(" | ")" | "$" | "\"" | "'" //| "*" | "?" |
     )
     ~ ANY
 }
@@ -62,8 +62,6 @@ word = ${ (tilde_span | span) ~ span* }
 span = _{
     double_quoted_span
     | single_quoted_span
-    | any_string_span
-    | any_char_span
     | expr_span
     | command_span
     | proc_subst_span
@@ -71,15 +69,15 @@ span = _{
     | param_ex_span
     | param_span
     | command_substitution_span
+    | brace_literal_span
     | literal_span
 }
 escaped_char = { "\\" ~ ANY }
 unescaped_char = { word_char }
 tilde_char = ${ (":" | "=") ~ tilde_span }
-literal_span = ${ (tilde_char | silent_char | escaped_char | unescaped_char)+ }
+literal_span = ${ ((tilde_char | silent_char | escaped_char | unescaped_char))+ }
+brace_literal_span = { "{" ~ literal_span ~ "}" }
 tilde_span = ${ "~" ~ username? }
-any_string_span = { "*" }
-any_char_span = { "?" }
 command_span = !{ "$(" ~ compound_list ~ ")" }
 proc_subst_direction = { "<(" | ">(" }
 proc_subst_span = !{ proc_subst_direction ~ compound_list ~ ")" }
@@ -285,7 +283,7 @@ cond_not = { "!" }
 cond_expr =  _{ cond_or }
 cond_or = { cond_and ~ ("||" ~ cond_or)? }
 cond_and = { cond_term ~ ("&&" ~ cond_and)? }
-cond_term = { cond_primary_op ~ cond_primary | cond_primary ~ "=~" ~ pattern_word | cond_primary ~ (cond_op ~ cond_term)? }
+cond_term = { cond_primary_op ~ cond_primary | cond_primary ~ "=~" ~ regex_word | cond_primary ~ (cond_op ~ cond_term)? }
 cond_primary_op = {
     "-z" | "-n" | "-a" | "-b" | "-c" | "-d" | "-e" | "-f" | "-g" | "-h" | "-k" | "-p" | "-r" | "-s" | "-t" | "-u" |
     "-w" | "-x" | "-O" | "-G" | "-L" | "-N" | "-S"
@@ -298,7 +296,7 @@ cond_primary_inner = _{
     | "(" ~ cond_expr ~ ")"
 }
 
-pattern_word = ${ (!WHITESPACE ~ ANY)+ }
+regex_word = ${ (!WHITESPACE ~ ANY)+ }
 
 //
 //  Command

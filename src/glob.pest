@@ -1,0 +1,59 @@
+// **/*.jpg
+double_any_string = { "**" }
+any_string = { "*" }
+any_char = { "?" }
+
+match_char_any = @{ (!"]" ~ ANY) }
+// [abcd-f[:alpha:]]
+match_char_span = { "[" ~ match_char_span_inner* ~ "]"}
+match_char_span_inner = _{
+    match_char_class |
+    match_char_range |
+    match_char_not |
+    match_char_any
+}
+match_char_class = @{ "[:" ~ ASCII_ALPHANUMERIC+ ~ ":]" }
+match_char_range = { match_char_any ~ "-" ~ match_char_any }
+match_char_not = @{ ("!" | "^") ~ match_char_any }
+
+match_string_any = _{ !("}" | ",") ~ ANY }
+// {abc,def}
+match_string_span = { "{" ~ match_string_span_inner* ~ "}" }
+match_string_span_inner = _{
+    match_string_word ~ ("," ~ match_string_span_inner)*
+}
+match_string_word = { match_string_any+ }
+
+// !(a|b) ?(a|b)
+extglob = ${ extglob_op ~ "(" ~ pattern_list ~ ")" }
+extglob_op = { "?" | "*" | "+" | "@" | "!" }
+pattern_list = { pattern ~ ("|" ~ pattern_list)* }
+pattern = _{ (!("|" | ")") ~ ANY)* }
+
+
+escaped_char = @{ "\\" ~ ANY }
+unescaped_char = @{ ANY }
+
+//glob_string = @{
+//    (
+//    !("[" | "]" | extglob_op | "{" | "}" | "(" | ")" | double_any_string | any_string | any_char | "/")
+//    ~ ("\\[" | "\\]" | "\\{" | "\\}" | "\\(" | "\\)" | "\\*" | "\\?" | "\\+" | "\\@" | "\\!" | "\\/" | ANY)
+//    )+
+//}
+
+glob_span = {
+    (
+    match_char_span |
+    match_string_span |
+    extglob |
+    double_any_string |
+    any_string |
+    any_char |
+    escaped_char |
+    unescaped_char
+    )+
+}
+
+path_span = { "/"* ~ glob_span ~ ("/"+ ~ glob_span)* }
+
+glob = _{ SOI ~ path_span ~ EOI }

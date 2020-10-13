@@ -4,7 +4,7 @@ use crate::parser::{
     self, Assignment, Ast, BinaryExpr, CondExpr, Expr, HereDoc, Initializer, LocalDeclaration,
     RunIf, Word,
 };
-use crate::pattern::{match_pattern, match_pattern_all, NoMatchesError};
+use crate::pattern::{match_pattern_all, NoMatchesError};
 use crate::process::*;
 use crate::shell::Shell;
 use crate::variable::Value;
@@ -333,21 +333,21 @@ fn run_case_command(
 ) -> Result<ExitStatus> {
     let word = expand_word_into_string(shell, word)?;
     // Find the exact match first.
-    for case in cases {
-        for pattern in &case.patterns {
-            let pattern = expand_word_into_string(shell, pattern)?;
-            if pattern == word {
-                return Ok(run_terms(
-                    shell, &case.body, ctx.stdin, ctx.stdout, ctx.stderr,
-                ));
-            }
-        }
-    }
+    // for case in cases {
+    //     for pattern in &case.patterns {
+    //         let pattern = expand_word_into_string(shell, pattern)?;
+    //         if pattern == word {
+    //             return Ok(run_terms(
+    //                 shell, &case.body, ctx.stdin, ctx.stdout, ctx.stderr,
+    //             ));
+    //         }
+    //     }
+    // }
     // If there is no exact matched pattern, find regular expression match.
     for case in cases {
         for pattern in &case.patterns {
             let pattern = expand_into_single_pattern_word(shell, &pattern)?;
-            if match_pattern(&pattern, &word) {
+            if match_pattern_all(&pattern, &word) {
                 return Ok(run_terms(
                     shell, &case.body, ctx.stdin, ctx.stdout, ctx.stderr,
                 ));

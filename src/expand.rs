@@ -1,6 +1,6 @@
 use crate::eval::*;
 use crate::parser::{ExpansionOp, ProcSubstType, Span, Word};
-use crate::pattern::{LiteralOrGlob, PatternWord};
+use crate::pattern::{PatternWord};
 use crate::shell::Shell;
 use crate::variable::Value;
 use failure::Error;
@@ -166,12 +166,12 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 // Internally used by the parser.
                 unreachable!()
             }
-            Span::Literal(s) => (vec![LiteralOrGlob::Literal(s.clone())], false),
+            Span::Literal(s) => (vec![s.clone()], false),
             Span::Parameter { name, op, quoted: _ } => {
                 let mut frags = Vec::new();
                 for value in expand_param(shell, name, op)? {
                     if let Some(frag) = value {
-                        frags.push(LiteralOrGlob::Literal(frag));
+                        frags.push(frag);
                     }
                 }
                 // (frags, !quoted)
@@ -193,16 +193,16 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                         } else {
                             if let Some(frag) = shell.get(name)
                                 .map(|v| v.value_at(idx as usize).to_string()) {
-                                result = (vec![LiteralOrGlob::Literal(frag)], !quoted);
+                                result = (vec![frag], !quoted);
                             }
                         }
                     } else if idx == "*" || idx == "@" {
                         if let Some(value) = shell.get(name) {
                             let values = value.array().map_or(vec![], |elems| elems.map(|frag| frag.to_string()).collect());
                             let lit = if *quoted {
-                                vec![LiteralOrGlob::Literal(values.join(" "))]
+                                vec![values.join(" ")]
                             } else {
-                                values.into_iter().map(|v| LiteralOrGlob::Literal(v)).collect()
+                                values.into_iter().map(|v| v).collect()
                             };
                             result = (lit, !quoted)
                         }
@@ -212,7 +212,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
             }
             Span::ArithExpr { expr } => {
                 let result = evaluate_expr(shell, expr).to_string();
-                (vec![LiteralOrGlob::Literal(result)], false)
+                (vec![result], false)
             }
             Span::Tilde(user) => {
                 if user.is_some() {
@@ -220,7 +220,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 }
 
                 let dir = dirs::home_dir().unwrap().to_str().unwrap().to_owned();
-                (vec![LiteralOrGlob::Literal(dir)], false)
+                (vec![dir], false)
             }
             Span::Command { body, quoted } => {
                 let (_, stdout) = eval_in_subshell(shell, body)?;
@@ -240,7 +240,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 if output.is_empty() {
                     (vec![], !quoted)
                 } else {
-                    (vec![LiteralOrGlob::Literal(output)], !quoted)
+                    (vec![output], !quoted)
                 }
             }
             Span::ProcSubst { body, subst_type } => {
@@ -249,7 +249,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                     // <()
                     ProcSubstType::StdoutToFile => {
                         let file_name = format!("/dev/fd/{}", stdout);
-                        (vec![LiteralOrGlob::Literal(file_name)], false)
+                        (vec![file_name], false)
                     }
                     // >()
                     ProcSubstType::FileToStdin => {
@@ -258,29 +258,22 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                     }
                 }
             }
-            Span::AnyChar { quoted } if !*quoted => (vec![LiteralOrGlob::AnyChar], false),
-            Span::AnyString { quoted } if !*quoted => (vec![LiteralOrGlob::AnyString], false),
-            Span::AnyChar { .. } => (vec![LiteralOrGlob::Literal("?".into())], false),
-            Span::AnyString { .. } => (vec![LiteralOrGlob::Literal("*".into())], false),
         };
 
         // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo="1 2 3"`.
         let frags_len = frags.len();
         for frag in frags {
-            match frag {
-                LiteralOrGlob::Literal(ref lit) if expand => {
-                    if !current_word.is_empty() {
-                        words.push(PatternWord::new(current_word));
-                        current_word = Vec::new();
-                    }
+            if expand == true {
+                if !current_word.is_empty() {
+                    words.push(PatternWord::new(current_word));
+                    current_word = Vec::new();
+                }
 
-                    for word in lit.split(|c| ifs.contains(c)) {
-                        words.push(PatternWord::new(vec![LiteralOrGlob::Literal(word.into())]));
-                    }
+                for word in frag.split(|c| ifs.contains(c)) {
+                    words.push(PatternWord::new(vec![word.to_string()]));
                 }
-                frag => {
-                    current_word.push(frag);
-                }
+            } else {
+                current_word.push(frag);
             }
 
             if frags_len > 1 && !current_word.is_empty() {
@@ -295,6 +288,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
     }
 
     trace!("expand_word: word={:?}, to={:?}", word, words);
+    // println!("expand_word: word={:?}, to={:?}", word, words);
     if words.is_empty() {
         Ok(vec![])
         // Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal(

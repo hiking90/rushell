@@ -14,7 +14,7 @@ extern crate log;
 extern crate structopt;
 #[macro_use]
 extern crate failure;
-extern crate glob;
+// extern crate glob;
 extern crate whoami;
 extern crate regex;
 
@@ -38,6 +38,7 @@ mod git;
 mod prompt;
 mod completion;
 mod input;
+mod glob;
 #[cfg(test)]
 mod script_test;
 

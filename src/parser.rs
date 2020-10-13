@@ -279,14 +279,6 @@ pub enum Span {
     ArithExpr {
         expr: Expr,
     },
-    // *
-    AnyString {
-        quoted: bool,
-    },
-    // ?
-    AnyChar {
-        quoted: bool,
-    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -725,7 +717,7 @@ impl ShellParser {
                             _ => unimplemented!(),
                         }
                     }
-                    Rule::pattern_word => {
+                    Rule::regex_word => {
                         Box::new(CondExpr::Regex(lhs, pair.as_str().into()))
                     }
                     _ => unreachable!(),
@@ -793,6 +785,53 @@ impl ShellParser {
         Span::Tilde(username)
     }
 
+    fn visit_literal(&mut self, pair: Pair<Rule>, literal_chars: bool, spans: &mut Vec<Span>) {
+        if literal_chars {
+            let mut chars = Vec::new();
+            for ch in pair.into_inner() {
+                match ch.as_rule() {
+                    Rule::escaped_char => {
+                        let lit_ch = ch.as_str().chars().nth(1).unwrap();
+                        chars.push(LiteralChar::Escaped(lit_ch))
+                    }
+                    Rule::unescaped_char => {
+                        let lit_ch = ch.as_str().chars().nth(0).unwrap();
+                        chars.push(LiteralChar::Normal(lit_ch))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            spans.push(Span::LiteralChars(chars));
+        } else {
+            let mut s = String::new();
+
+            for ch in pair.into_inner() {
+                match ch.as_rule() {
+                    Rule::escaped_char => {
+                        let lit_ch = ch.as_str().chars().nth(1).unwrap();
+                        s.push(lit_ch)
+                    }
+                    Rule::unescaped_char => {
+                        let lit_ch = ch.as_str().chars().nth(0).unwrap();
+                        s.push(lit_ch)
+                    }
+                    Rule::tilde_char => {
+                        s.push(ch.as_str().chars().nth(0).unwrap());
+                        spans.push(Span::Literal(s));
+                        s = String::new();
+                        spans.push(self.visit_tilde(ch.into_inner().next().unwrap()));
+                    }
+                    Rule::silent_char => {}
+                    _ => unreachable!(),
+                }
+            }
+
+            if s.is_empty() == false {
+                spans.push(Span::Literal(s));
+            }
+        }
+    }
+
     // word = ${ (tilde_span | span) ~ span* }
     // span = _{
     //     double_quoted_span
@@ -812,49 +851,14 @@ impl ShellParser {
         let mut spans = Vec::new();
         for span in pair.into_inner() {
             match span.as_rule() {
-                Rule::literal_span if literal_chars => {
-                    let mut chars = Vec::new();
-                    for ch in span.into_inner() {
-                        match ch.as_rule() {
-                            Rule::escaped_char => {
-                                let lit_ch = ch.as_str().chars().nth(1).unwrap();
-                                chars.push(LiteralChar::Escaped(lit_ch))
-                            }
-                            Rule::unescaped_char => {
-                                let lit_ch = ch.as_str().chars().nth(0).unwrap();
-                                chars.push(LiteralChar::Normal(lit_ch))
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                    spans.push(Span::LiteralChars(chars));
+                Rule::brace_literal_span => {
+                    spans.push(Span::Literal(span.as_str().chars().nth(0).unwrap().into()));
+                    let last = Span::Literal(span.as_str().chars().last().unwrap().into());
+                    self.visit_literal(span.into_inner().next().unwrap(), literal_chars, &mut spans);
+                    spans.push(last);
                 }
-                Rule::literal_span if !literal_chars => {
-                    let mut s = String::new();
-
-                    for ch in span.into_inner() {
-                        match ch.as_rule() {
-                            Rule::escaped_char => {
-                                let lit_ch = ch.as_str().chars().nth(1).unwrap();
-                                s.push(lit_ch)
-                            }
-                            Rule::unescaped_char => {
-                                let lit_ch = ch.as_str().chars().nth(0).unwrap();
-                                s.push(lit_ch)
-                            }
-                            Rule::tilde_char => {
-                                s.push(ch.as_str().chars().nth(0).unwrap());
-                                spans.push(Span::Literal(s));
-                                s = String::new();
-                                spans.push(self.visit_tilde(ch.into_inner().next().unwrap()));
-                            }
-                            Rule::silent_char => {}
-                            _ => unreachable!(),
-                        }
-                    }
-                    if s.is_empty() == false {
-                        spans.push(Span::Literal(s));
-                    }
+                Rule::literal_span => {
+                    self.visit_literal(span, literal_chars, &mut spans);
                 }
                 Rule::double_quoted_span => {
                     for span_in_quote in span.into_inner() {
@@ -900,12 +904,6 @@ impl ShellParser {
                 Rule::command_span => spans.push(self.visit_command_span(span, false)),
                 Rule::proc_subst_span => spans.push(self.visit_proc_subst_span(span)),
                 Rule::tilde_span => spans.push(self.visit_tilde(span)),
-                Rule::any_string_span => {
-                    spans.push(Span::AnyString { quoted: false });
-                }
-                Rule::any_char_span => {
-                    spans.push(Span::AnyChar { quoted: false });
-                }
                 _ => {
                     println!("unimpl: {:?}", span);
                     unimplemented!();
@@ -2964,9 +2962,7 @@ pub fn test_expansions() {
                                 quoted: false,
                                 op: ExpansionOp::Subst {
                                     pattern: Word(vec![
-                                        Span::Literal("a".into()),
-                                        Span::AnyString { quoted: false },
-                                        Span::Literal("/e".into()),
+                                        Span::Literal("a*/e".into()),
                                     ]),
                                     replacement: Word(vec![Span::Literal("12345".into()),]),
                                     replace_all: false
@@ -3316,12 +3312,8 @@ pub fn test_patterns() {
                         external: false,
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
-                            Word(vec![Span::AnyString { quoted: false }]),
-                            Word(vec![
-                                Span::Literal("a".into()),
-                                Span::AnyChar { quoted: false },
-                                Span::Literal("c".into()),
-                            ]),
+                            Word(vec![Span::Literal("*".into())]),
+                            Word(vec![Span::Literal("a?c".into())]),
                         ],
                         redirects: vec![],
                         assignments: vec![],
@@ -3683,6 +3675,34 @@ pub fn test_regex() {
                 }],
             }],
         })
+    );
+}
+
+#[test]
+pub fn test_brace_literal() {
+    assert_eq!(
+        parse("echo src/*.{rs,pest}"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "echo src/*.{rs,pest}".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        external: false,
+                        argv: vec![lit!("echo"),
+                            Word(vec![
+                                Span::Literal("src/*.".into()),
+                                Span::Literal("{".into()),
+                                Span::Literal("rs,pest".into()),
+                                Span::Literal("}".into())]
+                                )],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }),
     );
 }
 
