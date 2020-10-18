@@ -94,9 +94,9 @@ fn pattern_word_match(pattern: &PatternWord, text: &str, match_all: bool) -> Opt
     None
 }
 
-pub fn match_pattern(pattern: &PatternWord, text: &str) -> bool {
-    pattern_word_match(pattern, text, false).is_some()
-}
+// pub fn match_pattern(pattern: &PatternWord, text: &str) -> bool {
+//     pattern_word_match(pattern, text, false).is_some()
+// }
 
 pub fn match_pattern_all(pattern: &PatternWord, text: &str) -> bool {
     match pattern_word_match(pattern, text, true) {

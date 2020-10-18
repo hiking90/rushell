@@ -203,7 +203,11 @@ impl ShellCompleter {
             }
         }
 
-        completions
+        if completions.is_empty() {
+            self.complete_folder(&command)
+        } else {
+            completions
+        }
     }
 
     fn folder_to_completion(&self, entries: &Vec<Arc<fs::DirEntry>>, base_dir: Option<&str>, fname: &str) -> Vec<linefeed::Completion> {

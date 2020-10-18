@@ -13,12 +13,11 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, dup2, execv, fork, getpid, setpgid, tcsetpgrp, ForkResult, Pid};
 use std::ffi::CString;
 use std::fmt;
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions, File, metadata};
 use std::hash::{Hash, Hasher};
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
-use std::fs::File;
 use std::io::{Read, SeekFrom, Seek};
 
 type Result<I> = std::result::Result<I, Error>;
@@ -395,23 +394,34 @@ pub fn run_external_command(
 
     // Determine the absolute path of the command.
     let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") || argv[0].starts_with("../") {
-        CString::new(argv[0].as_str())?
+        argv[0].to_owned()
     } else {
         match shell.commands().get_external(&argv[0]) {
             Some(entry) => {
                 if let Some(path) = entry.path().to_str() {
-                    CString::new(path)?
+                    path.to_owned()
                 } else {
                     print_err!("Invalid UTF8 character `{}'", argv[0]);
                     return Ok(ExitStatus::ExitedWith(1));
                 }
             }
             None => {
-                print_err!("command not found `{}'", argv[0]);
-                return Ok(ExitStatus::ExitedWith(1));
+                argv[0].to_owned()
             }
         }
     };
+
+    match metadata(&argv0) {
+        Ok(meta) => {
+            if meta.is_dir() {
+                return run_internal_command(shell, &vec!["cd".into(), argv0], ctx.stdin, ctx.stdout, ctx.stderr, redirects);
+            }
+        }
+        Err(_) => {
+            print_err!("command not found `{}`", argv0);
+            return Ok(ExitStatus::ExitedWith(255));
+        }
+    }
 
     // Construct CString argv.
     let mut args = Vec::new();
@@ -480,7 +490,7 @@ pub fn run_external_command(
                 }
             }
 
-            shell_execv(shell, ctx, argv0, args);
+            shell_execv(shell, ctx, CString::new(argv0)?, args);
             unreachable!();
         }
     }

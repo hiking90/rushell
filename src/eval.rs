@@ -234,11 +234,11 @@ fn run_simple_command(
     }
 
     // Functions
-    let argv0 = argv[0].as_str();
-    if let Some(var) = shell.get(argv0) {
+    let argv0 = argv[0].to_owned();
+    if let Some(var) = shell.get(&argv0) {
         if var.is_function() {
             let args: Vec<String> = argv.iter().skip(1).cloned().collect();
-            return call_function(shell, argv0, ctx, &args, vec![]);
+            return call_function(shell, &argv0, ctx, &args, vec![]);
         }
     }
     // Internal commands
