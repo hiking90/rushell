@@ -78,3 +78,15 @@ pub fn var_os(env: &str, default: &str) -> String {
 
     default.to_owned()
 }
+
+pub fn home_dir_for_user(user: &str) -> Option<String> {
+    use nix::libc::getpwnam;
+    use std::ffi::{CString, CStr};
+
+    let user = CString::new(user).ok()?;
+
+    unsafe {
+        let passwd = getpwnam(user.as_ptr());
+        return Some(CStr::from_ptr((*passwd).pw_dir).to_str().ok()?.to_string());
+    }
+}

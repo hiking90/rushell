@@ -3,6 +3,7 @@ use crate::parser::{ExpansionOp, ProcSubstType, Span, Word};
 use crate::pattern::{PatternWord};
 use crate::shell::Shell;
 use crate::variable::Value;
+use crate::utils::home_dir_for_user;
 use failure::Error;
 use std::fs::File;
 use std::io::prelude::*;
@@ -215,12 +216,13 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 (vec![result], false)
             }
             Span::Tilde(user) => {
-                if user.is_some() {
-                    print_err!("warning: ~user is not yet supported");
-                }
+                let home_dir = if let Some(user) = user {
+                    home_dir_for_user(user).unwrap_or_else(|| format!("~{}", user))
+                } else {
+                    dirs::home_dir().unwrap().to_str().unwrap().to_owned()
+                };
 
-                let dir = dirs::home_dir().unwrap().to_str().unwrap().to_owned();
-                (vec![dir], false)
+                (vec![home_dir], false)
             }
             Span::Command { body, quoted } => {
                 let (_, stdout) = eval_in_subshell(shell, body)?;
