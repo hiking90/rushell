@@ -297,6 +297,11 @@ impl Shell {
 
     pub fn export(&mut self, name: &str) {
         self.exported.insert(name.to_string());
+        if let Some(var) = self.remove(name) {
+            if let Some(value) = var.value() {
+                self.set(name, value.clone(), false);
+            }
+        }
     }
 
     pub fn exported_names(&self) -> std::collections::hash_set::Iter<String> {
