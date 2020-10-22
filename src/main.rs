@@ -57,6 +57,21 @@ use std::sync::{Arc, Mutex};
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 const PROMPT_STYLE: &str = "PROMPT_STYLE";
 
+fn init_dir(conf_dir:&PathBuf) -> io::Result<(PathBuf, PathBuf)> {
+    let history_file = conf_dir.join("history");
+    let init_file = conf_dir.join("init.sh");
+
+    fs::create_dir_all(conf_dir)?;
+
+    if init_file.exists() == false {
+        let mut f = fs::File::create(&init_file)?;
+        f.write_fmt(format_args!("{}=basic\n", PROMPT_STYLE))?;
+        f.write_fmt(format_args!("# {}=power\n", PROMPT_STYLE))?;
+    }
+
+    Ok((history_file, init_file))
+}
+
 fn main() -> io::Result<()> {
     pretty_env_logger::init();
 
@@ -105,18 +120,9 @@ fn main() -> io::Result<()> {
     interface.set_report_signal(linefeed::Signal::Interrupt, true);
 
     let conf_dir = homedir.join(".config/rushell/");
-    let history_file = conf_dir.join("history");
-    let init_file = conf_dir.join("init.sh");
+    let (history_file, init_file) = init_dir(&conf_dir)?;
 
-    if fs::create_dir_all(&conf_dir).is_ok() {
-        let _ = interface.load_history(&history_file);
-    }
-
-    if init_file.exists() == false {
-        let mut f = fs::File::create(&init_file)?;
-        f.write_fmt(format_args!("{}=basic\n", PROMPT_STYLE))?;
-        f.write_fmt(format_args!("# {}=power\n", PROMPT_STYLE))?;
-    }
+    interface.load_history(&history_file)?;
 
     let folder_scanner = Arc::new(Mutex::new(completer::FolderScanner::new()));
 
@@ -244,4 +250,19 @@ fn main() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_init_dir() -> io::Result<()> {
+        let mut conf_dir = PathBuf::from(".config/rushell/");
+
+        init_dir(&conf_dir)?;
+        conf_dir.pop();
+        fs::remove_dir_all(conf_dir)?;
+        Ok(())
+    }
 }
