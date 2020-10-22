@@ -100,8 +100,14 @@ impl Frame {
             .insert(key.into(), Arc::new(Variable::new(Some(value))));
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
-        self.vars.remove(key)
+    pub fn remove(&mut self, key: &str, function: bool) -> Option<Arc<Variable>> {
+        if let Some(var) = self.get(key) {
+            let is_function = var.is_function();
+            if is_function == function {
+                return self.vars.remove(key);
+            }
+        }
+        None
     }
 
     pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
@@ -148,7 +154,7 @@ impl Frame {
 
     /// Removes `$<index>`.
     pub fn remove_nth_arg(&mut self, index: usize) -> Option<Arc<Variable>> {
-        self.remove(&index.to_string())
+        self.remove(&index.to_string(), false)
     }
 
     /// Returns `$<index>`.

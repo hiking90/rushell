@@ -258,15 +258,15 @@ impl Shell {
         }
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
-        if let Some(var) = self.current_frame_mut().remove(key) {
+    pub fn remove(&mut self, key: &str, function: bool) -> Option<Arc<Variable>> {
+        if let Some(var) = self.current_frame_mut().remove(key, function) {
             if let Value::Function(ref _f) = var.value().as_ref().unwrap() {
                 self.commands = None;
             }
             return Some(var);
         }
 
-        if let Some(var) = self.global.remove(key) {
+        if let Some(var) = self.global.remove(key, function) {
             if let Value::Function(ref _f) = var.value().as_ref().unwrap() {
                 self.commands = None;
             }
@@ -297,7 +297,7 @@ impl Shell {
 
     pub fn export(&mut self, name: &str) {
         self.exported.insert(name.to_string());
-        if let Some(var) = self.remove(name) {
+        if let Some(var) = self.remove(name, false) {
             if let Some(value) = var.value() {
                 self.set(name, value.clone(), false);
             }

@@ -6,6 +6,8 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "unset", about = "Set command.")]
 struct Opt {
+    #[structopt(short = "f")]
+    function: bool,
     #[structopt(name = "NAME")]
     name: String,
 }
@@ -15,7 +17,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
-            ctx.shell.remove(&opts.name);
+            ctx.shell.remove(&opts.name, opts.function);
             ExitStatus::ExitedWith(0)
         }
         Err(err) => {

@@ -10,9 +10,7 @@ use crate::{git, theme, shell, utils};
 use nix::unistd::{close, pipe, Uid};
 use ansi_term::{Style};
 
-
 pub struct Condition {
-    pub prompt: String,
     pub user: String,
     pub host: String,
     pub git: Option<git::Git>,
@@ -25,7 +23,6 @@ impl Condition {
         let splitted: Vec<&str> = hostname.split('.').collect();
 
         Condition {
-            prompt: utils::var_os("PS1", " ❯ "),
             user: whoami::username(),
             host: splitted.first().unwrap().to_string(),
             git: git::Git::new(),
@@ -110,6 +107,14 @@ impl PowerLine {
             String::new()
         };
 
+        let mut ps1 = parse_ps1(_shell, condition);
+        if ps1.is_empty() == false {
+            ps1 = format!("\x01{}\x02 {} \x01{}\x02{}",
+                theme.repo.prefix(), ps1, theme.repo.suffix(),
+                self.arrow_format(theme.repo, Some(theme.path))
+            );
+        }
+
         let host = if condition.remote_login {
             format!("\x01{}\x02 {}\x01{}{}\x02@{} \x01{}\x02{}",
                 theme.username.prefix(),
@@ -157,8 +162,8 @@ impl PowerLine {
 
         let arrow = self.arrow_format(theme.path_basename, git_style);
 
-        format!("{}{}{}{}{}",
-            host, path, base, arrow, git,
+        format!("{}{}{}{}{}{}",
+            ps1, host, path, base, arrow, git,
         )
     }
 }
@@ -236,13 +241,18 @@ impl Prompt for Default {
         let path_style = theme.path(readonly);
         let style = theme::default_theme().prompt;
 
-        format!("\n {host}\x01{path_prefix}\x02{path}\x01{path_suffix}\x02 {git}\n\x01{prefix}\x02{prompt}\x01{suffix}\x02",
+        let mut ps1 = parse_ps1(_shell, condition);
+        if ps1.is_empty() == false {
+            ps1 = format!("\x01{}\x02{}\x01{}\x02", theme.repo.prefix(), ps1, theme.repo.suffix());
+        }
+
+        format!("\n{ps1} {host}\x01{path_prefix}\x02{path}\x01{path_suffix}\x02 {git}\n\x01{prefix}\x02 ❯ \x01{suffix}\x02",
+            ps1 = ps1,
             host = host_prompt,
             path_prefix = path_style.prefix(),
             path = path,
             path_suffix = path_style.suffix(),
             git = git_prompt,
-            prompt = condition.prompt,
             prefix = style.prefix(),
             suffix = style.suffix(),
         )
@@ -290,4 +300,79 @@ fn is_readonly(path: &Path) -> bool {
     }
 
     false
+}
+
+fn parse_ps1(shell: &shell::Shell, condition: &Condition) -> String {
+    use chrono::{Local, DateTime};
+
+    let ps1 = shell.get_str("PS1").unwrap_or(String::new());
+
+    let mut res = String::new();
+    let mut backslash = false;
+    let mut buf = String::new();
+    let mut is_buffering = false;
+
+    for ch in ps1.chars() {
+        if backslash == false {
+            if ch == '\\' {
+                backslash = true;
+            } else {
+                res.push(ch);
+            }
+        } else {
+            backslash = false;
+            match ch {
+                'd' => {
+                    let dt: DateTime<Local> = Local::now();
+                    res += &dt.format("%a %h %e").to_string();
+                }
+                't' => {
+                    let dt: DateTime<Local> = Local::now();
+                    res += &dt.format("%X").to_string();
+                }
+                'T' => {
+                    let dt: DateTime<Local> = Local::now();
+                    res += &dt.format("%T").to_string();
+                }
+                '@' => {
+                    let dt: DateTime<Local> = Local::now();
+                    res += &dt.format("%r").to_string();
+                }
+                'A' => {
+                    let dt: DateTime<Local> = Local::now();
+                    res += &dt.format("%R").to_string();
+                }
+                '[' => { is_buffering = true; }
+                ']' => {
+                    if is_buffering == true && buf.is_empty() == false {
+                        res += &format!("\x01{}\x02", buf);
+                        buf = String::new();
+                    }
+                    is_buffering = false;
+                }
+                'H' |
+                'h' => res += &condition.host,
+                'u' => res += &condition.user,
+                's' => res += utils::SHELL_NAME,
+                'n' => res.push('\n'),
+                'r' => res.push('\r'),
+                '\\' => res.push('\\'),
+
+                // Not supported.
+                'e' | 'j' | 'l' | 'v' | 'V' | 'w' | 'W' | '!' | '#' | '$' | 'D'
+                => {}
+
+                _ => {
+                    if is_buffering {
+                        buf.push(ch);
+                    } else {
+                        res.push('\\');
+                        res.push(ch);
+                    }
+                }
+            }
+        }
+    }
+
+    res
 }

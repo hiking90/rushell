@@ -148,6 +148,10 @@ fn main() -> io::Result<()> {
             shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
         }
 
+        if shell.get("PS1").is_none() {
+            shell.set("PS1", Value::String("\\[\\]".into()), false);
+        }
+
         #[cfg(target_os = "linux")]
         shell.run_str("alias ls=\"ls --color\"");
 

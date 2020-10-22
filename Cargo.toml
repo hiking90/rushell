@@ -27,6 +27,7 @@ structopt = "0"
 phf = { version = "0", features = ["macros"] }
 lazy_static = "1"
 whoami = "0"
+chrono = "0.4"
 
 [dependencies.regex]
 version = "1"
