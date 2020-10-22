@@ -108,14 +108,14 @@ fn main() -> io::Result<()> {
     let history_file = conf_dir.join("history");
     let init_file = conf_dir.join("init.sh");
 
+    if fs::create_dir_all(&conf_dir).is_ok() {
+        let _ = interface.load_history(&history_file);
+    }
+
     if init_file.exists() == false {
         let mut f = fs::File::create(&init_file)?;
         f.write_fmt(format_args!("{}=basic\n", PROMPT_STYLE))?;
         f.write_fmt(format_args!("# {}=power\n", PROMPT_STYLE))?;
-    }
-
-    if fs::create_dir_all(&conf_dir).is_ok() {
-        let _ = interface.load_history(&history_file);
     }
 
     let folder_scanner = Arc::new(Mutex::new(completer::FolderScanner::new()));
