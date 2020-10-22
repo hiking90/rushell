@@ -171,6 +171,8 @@ fn main() -> io::Result<()> {
         let stdin = std::fs::File::create("/dev/tty").unwrap();
         shell.set_interactive(unistd::isatty(stdin.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
         shell.set_current_dir(None)?;
+
+        writeln!(shell, "\nWelcome to rushell {}", env!("CARGO_PKG_VERSION"))?;
     }
 
     let mut prompt = if let Some(prompt) = prompt_command {
@@ -225,7 +227,7 @@ fn main() -> io::Result<()> {
                     multiline = String::new();
                 }
                 _ => {
-                    writeln!(shell, "Good Bye!")?;
+                    writeln!(shell, "Good Bye!\n")?;
                     break;
                 }
             }

@@ -357,9 +357,10 @@ fn parse_ps1(shell: &shell::Shell, condition: &Condition) -> String {
                 'n' => res.push('\n'),
                 'r' => res.push('\r'),
                 '\\' => res.push('\\'),
+                'V' | 'v' => res += env!("CARGO_PKG_VERSION"),
 
                 // Not supported.
-                'e' | 'j' | 'l' | 'v' | 'V' | 'w' | 'W' | '!' | '#' | '$' | 'D'
+                'e' | 'j' | 'l' | 'w' | 'W' | '!' | '#' | '$' | 'D'
                 => {}
 
                 _ => {
