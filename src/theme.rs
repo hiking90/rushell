@@ -1,6 +1,6 @@
 use ansi_term::{Style, Color};
 
-pub struct Theme {
+pub struct PromptTheme {
     pub prompt: Style,
     pub prompt_continue: Style,
 
@@ -19,7 +19,7 @@ pub struct Theme {
     pub username: Style,
 }
 
-impl Theme {
+impl PromptTheme {
     pub fn arrow(style: Style, connected: Option<Style>) -> Style {
         let mut res = if let Some(background) = style.background {
             background.normal()
@@ -53,9 +53,9 @@ impl Theme {
     }
 }
 
-pub fn default_theme() -> Theme {
+pub fn basic_theme() -> PromptTheme {
     let base0d = Color::RGB(0xEB, 0xCB, 0x8B);
-    Theme {
+    PromptTheme {
         prompt: Color::Purple.bold(),
         prompt_continue: Color::Fixed(13).bold(),
 
@@ -75,14 +75,14 @@ pub fn default_theme() -> Theme {
     }
 }
 
-pub fn nord_theme() -> Theme {
+pub fn nord_theme() -> PromptTheme {
     let base00 = Color::RGB(0x2E, 0x34, 0x40);
     let base02 = Color::RGB(0x43, 0x4C, 0x5E);
     let base05 = Color::RGB(0xE5, 0xE9, 0xF0);
     let base08 = Color::RGB(0x88, 0xC0, 0xD0);
     let base0d = Color::RGB(0xEB, 0xCB, 0x8B);
 
-    Theme {
+    PromptTheme {
         prompt: Color::Fixed(10).on(Color::Black).bold(),
         prompt_continue: Color::Fixed(13).on(Color::Black).bold(),
 
@@ -99,5 +99,25 @@ pub fn nord_theme() -> Theme {
 
         hostname: Color::RGB(0x25, 0x5e, 0x87).on(Color::RGB(0xcc, 0xcc, 0xcc)),
         username: Color::RGB(0x25, 0x5e, 0x87).on(Color::RGB(0xcc, 0xcc, 0xcc)).bold(),
+    }
+}
+
+pub struct SyntaxTheme {
+    pub normal: Style,
+    pub command: Style,
+    pub error: Style,
+    pub quoted: Style,
+    pub valid_path: Style,
+    pub argument: Style,
+}
+
+pub fn default_syntax_theme() -> SyntaxTheme {
+    SyntaxTheme {
+        normal: Style::new(),
+        command: Color::RGB(0, 0x5f, 0xd7).normal(),
+        error: Color::Red.normal(),
+        quoted: Color::RGB(0x99, 0x99, 0x00).normal(),
+        valid_path: Style::new().underline(),
+        argument: Color::RGB(0x00, 0xaf, 0xff).normal(),
     }
 }

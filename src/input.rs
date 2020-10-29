@@ -4,6 +4,15 @@ pub const ESCAPED_CHARS: &str = "\"`$\\";
 // const PART_BREAK_CHARS: &str = "@$><=;|&{(/";
 
 #[derive(Debug, Clone)]
+pub enum Kind {
+    Unknown,
+    Command,
+    Symbol,
+    Argument,
+    ValidPath,
+}
+
+#[derive(Debug, Clone)]
 pub enum Quoted {
     False,
     True(char),
@@ -14,6 +23,7 @@ pub enum Quoted {
 pub struct Word {
     pub start: usize,
     pub end: usize,
+    pub kind: Kind,
     pub quoted: Quoted,
     pub escaped_word: String,
     escaped: bool,
@@ -24,6 +34,7 @@ impl Word {
         Word {
             start: 0,
             end: 0,
+            kind: Kind::Unknown,
             quoted: Quoted::False,
             escaped: false,
             escaped_word: String::new(),
@@ -62,7 +73,7 @@ impl Word {
                     Quoted::Progress(qch) => {
                         if qch == ch {
                             self.quoted = Quoted::True(ch);
-                            self.end = idx + 1;
+                            self.end = idx + ch.len_utf8();
                             return true;
                         } else {
                             self.escaped_word.push(ch);
@@ -78,6 +89,17 @@ impl Word {
                     Quoted::Progress(_) => self.escaped_word.push(ch),
                     _ => unreachable!(),
                 }
+            } else if ESCAPED_CHARS.contains(ch) == true {
+                match self.quoted {
+                    Quoted::False => {
+                        self.kind = Kind::Symbol;
+                        self.escaped_word.push(ch);
+                        self.end = idx + ch.len_utf8();
+                        return true;
+                    }
+                    Quoted::Progress(_) => self.escaped_word.push(ch),
+                    _ => unreachable!(),
+                }
             } else {
                 self.escaped_word.push(ch);
             }
@@ -86,7 +108,7 @@ impl Word {
         if self.is_empty() {
             self.start = idx;
         }
-        self.end = idx + 1;
+        self.end = idx + ch.len_utf8();
 
         false
     }
@@ -136,6 +158,9 @@ impl<'a> Input<'a> {
         for i in 0 .. self.words.len() {
             if start == end {
                 start = i;
+                self.words[i].kind = Kind::Command;
+            } else {
+                self.words[i].kind = Kind::Argument;
             }
             end = i + 1;
 

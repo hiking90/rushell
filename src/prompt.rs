@@ -34,7 +34,7 @@ impl Condition {
 pub trait Prompt {
     fn main(&mut self, shell: &mut shell::Shell, condition: &Condition) -> String;
     fn second(&mut self, _shell: &mut shell::Shell) -> String {
-        let style = theme::default_theme().prompt_continue;
+        let style = theme::basic_theme().prompt_continue;
         format!("\x01{} ❯{}\x02 ",
             style.prefix(),
             style.suffix(),
@@ -53,7 +53,7 @@ impl PowerLine {
     }
 
     fn arrow_format(&self, style: Style, next: Option<Style>) -> String {
-        let arrow_style = theme::Theme::arrow(style, next);
+        let arrow_style = theme::PromptTheme::arrow(style, next);
 
         format!("\x01{}\x02\u{E0B0}\x01{}\x02",
             arrow_style.prefix(),
@@ -61,7 +61,7 @@ impl PowerLine {
         )
     }
 
-    fn build(&mut self, _shell: &mut shell::Shell, condition: &Condition, theme: &theme::Theme) -> String {
+    fn build(&mut self, _shell: &mut shell::Shell, condition: &Condition, theme: &theme::PromptTheme) -> String {
         let mut cwd = utils::current_working_dir();
         let mut git_style = None;
 
@@ -193,7 +193,7 @@ impl Default {
 
 impl Prompt for Default {
     fn main(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
-        let theme = theme::default_theme();
+        let theme = theme::basic_theme();
 
         let mut cwd = utils::current_working_dir();
         let readonly = is_readonly(&cwd);
@@ -239,7 +239,7 @@ impl Prompt for Default {
         self.last_prompt.push_str(&git_prompt);
 
         let path_style = theme.path(readonly);
-        let style = theme::default_theme().prompt;
+        let style = theme::basic_theme().prompt;
 
         let mut ps1 = parse_ps1(_shell, condition);
         if ps1.is_empty() == false {

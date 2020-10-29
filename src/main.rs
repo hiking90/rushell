@@ -39,6 +39,7 @@ mod prompt;
 mod completion;
 mod input;
 mod glob;
+mod syntaxer;
 #[cfg(test)]
 mod script_test;
 
@@ -112,6 +113,7 @@ fn main() -> io::Result<()> {
         }
     }
 
+    // Create Linefeed object
     let interface = Arc::new(Interface::new("rushell")?);
 
     interface.bind_sequence("\x1b\x1b[D", linefeed::Command::from_str("backward-word"));
@@ -119,14 +121,20 @@ fn main() -> io::Result<()> {
 
     interface.set_report_signal(linefeed::Signal::Interrupt, true);
 
+    // Create config directory and then create init script.
     let conf_dir = homedir.join(".config/rushell/");
     let (history_file, init_file) = init_dir(&conf_dir)?;
 
+    // Load history
     interface.load_history(&history_file)?;
 
+    // Create folder scanner. It caches 5 folders.
     let folder_scanner = Arc::new(Mutex::new(completer::FolderScanner::new()));
 
+    // Create completer and set it to linefeed.
     interface.set_completer(Arc::new(completer::ShellCompleter::new(mutex_shell.clone(), folder_scanner.clone())));
+
+    interface.set_syntaxer(Arc::new(syntaxer::Syntaxer::new()));
 
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
@@ -142,6 +150,9 @@ fn main() -> io::Result<()> {
 
     let mut prompt_style = String::from("basic");
     let mut prompt_command = None;
+
+
+    // Initialize script environment.
     if let Ok(mut shell) = mutex_shell.lock() {
         shell.set_linefeed(interface.clone());
 
@@ -150,24 +161,30 @@ fn main() -> io::Result<()> {
             shell.set(&key, Value::String(value.to_owned()), false);
         }
 
+        // If there is no PATH, set default PATH
         if shell.get("PATH").is_none() {
             shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
         }
 
+        // If there is no PS1, set PS1 to invisible format.
         if shell.get("PS1").is_none() {
             shell.set("PS1", Value::String("\\[\\]".into()), false);
         }
 
+        // Set colorized ls
         #[cfg(target_os = "linux")]
         shell.run_str("alias ls=\"ls --color\"");
 
         #[cfg(target_os = "macos")]
         shell.run_str("alias ls=\"ls -Gp\"");
 
+        // Init git aliases.
         git::aliases(&mut shell);
 
+        // Run init script.
         shell.run_file(init_file).ok();
 
+        // Set prompt
         if let Some(var) = shell.get(PROMPT_STYLE) {
             prompt_style = var.as_str().into();
         }
@@ -192,6 +209,7 @@ fn main() -> io::Result<()> {
     };
     let mut multiline = String::new();
 
+    // Start reading user input.
     loop {
         if let Ok(mut shell) = mutex_shell.lock() {
             shell.scan_commands();
