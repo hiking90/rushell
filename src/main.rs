@@ -18,6 +18,9 @@ extern crate failure;
 extern crate whoami;
 extern crate regex;
 
+#[macro_use]
+extern crate lalrpop_util;
+
 // #[cfg(test)]
 // extern crate test;
 
@@ -42,6 +45,8 @@ mod glob;
 mod syntaxer;
 #[cfg(test)]
 mod script_test;
+
+mod program;
 
 // use crate::prompt::Prompt;
 use crate::variable::Value;

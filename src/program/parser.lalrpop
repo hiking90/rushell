@@ -1,0 +1,550 @@
+use std::str::FromStr;
+use crate::program::ast;
+use crate::program::lexer;
+use lalrpop_util::{ErrorRecovery, ParseError};
+
+grammar<'err, 'input>(errors: &'err mut Vec<ErrorRecovery<usize, lexer::Tok<'input>, ast::Error>>);
+
+extern {
+    type Location = usize;
+    type Error = ast::Error;
+
+    enum lexer::Tok<'input> {
+        " "         => lexer::Tok::Space,
+        "["         => lexer::Tok::LBracket,
+        "]"         => lexer::Tok::RBracket,
+        "[["        => lexer::Tok::LDBracket,
+        "]]"        => lexer::Tok::RDBracket,
+        "="         => lexer::Tok::Equals,
+        "=+"        => lexer::Tok::EqualsPlus,
+        "=="        => lexer::Tok::DEquals,
+        "=~"        => lexer::Tok::EqualsTilde,
+        "&"         => lexer::Tok::Amp,
+        ";"         => lexer::Tok::Semi,
+        "|"         => lexer::Tok::Or,
+        "||"        => lexer::Tok::OrIf,
+        "&&"        => lexer::Tok::AndIf,
+        "\""        => lexer::Tok::DoubleQuoted,
+        "'"         => lexer::Tok::SingleQuoted,
+        "`"         => lexer::Tok::Backtick,
+        "$("        => lexer::Tok::CommandSpan,
+        "$(("       => lexer::Tok::LExprSpan,
+        "))"        => lexer::Tok::RExprSpan,
+        "("         => lexer::Tok::LParen,
+        ")"         => lexer::Tok::RParen,
+        "$"         => lexer::Tok::Dollar,
+        "!"         => lexer::Tok::Bang,
+        "!="        => lexer::Tok::BangEquals,
+        "${"        => lexer::Tok::ParamEx,
+        "{"         => lexer::Tok::LBrace,
+        "}"         => lexer::Tok::RBrace,
+        "\n"        => lexer::Tok::Linefeed,
+
+        "<"         => lexer::Tok::Less(<Option<char>>),
+        "<<"        => lexer::Tok::DLess(<Option<char>>),
+        "<<-"       => lexer::Tok::DLessDash(<Option<char>>),
+        "<&"        => lexer::Tok::LessAnd(<Option<char>>),
+        ">"         => lexer::Tok::Great(<Option<char>>),
+        ">&"        => lexer::Tok::GreatAnd(<Option<char>>),
+        ">>"        => lexer::Tok::DGreat(<Option<char>>),
+        "<>"        => lexer::Tok::LessGreat(<Option<char>>),
+        ">|"        => lexer::Tok::Clobber(<Option<char>>),
+        "&>"        => lexer::Tok::AndGreat(<Option<char>>),
+        "&>>"       => lexer::Tok::AndDGreat(<Option<char>>),
+
+        "-?"        => lexer::Tok::DashOp(<char>),
+        "-??"       => lexer::Tok::DashOp2(<&'input str>),
+
+        "if"        => lexer::Tok::If,
+        "then"      => lexer::Tok::Then,
+        "fi"        => lexer::Tok::Fi,
+        "elif"      => lexer::Tok::Elif,
+        "else"      => lexer::Tok::Else,
+
+        "while"     => lexer::Tok::While,
+        "do"        => lexer::Tok::Do,
+        "done"      => lexer::Tok::Done,
+
+        "TEXT"      => lexer::Tok::Text(<&'input str>),
+    }
+}
+
+pub Program: ast::Program = {
+    linebreak <cmds: CompleteCommands> linebreak => ast::Program { terms: <> },
+    linebreak => ast::Program { terms: vec![] },
+     // Term => ast::Program { terms: <> },
+}
+
+CompleteCommands: Vec<ast::Term> = {
+    <mut cmds: CompleteCommands> newline_list <cmd: CompleteCommand> => {
+        cmds.extend(cmd);
+        cmds
+    },
+    CompleteCommand,
+}
+
+CompleteCommand: Vec<ast::Term> = {
+    <mut l: List> <bg: separator_op> => {
+        let last = l.last_mut().unwrap();
+        last.background = bg;
+        l
+    },
+    List => <>,
+}
+
+separator_op: bool = {
+    "&" => true,
+    ";" => false,
+}
+
+separator: bool = {
+    <bg: separator_op> linebreak => bg,
+    newline_list => false,
+}
+
+List: Vec<ast::Term> = {
+    <mut l: List> <bg: separator_op> <ao: AndOr> => {
+        let last = l.last_mut().unwrap();
+        last.background = bg;
+        l.push(ao);
+        l
+    },
+    AndOr => vec![<>],
+}
+
+linebreak: () = {
+    newline_list?,
+}
+
+newline_list: () = {
+    "\n",
+    newline_list "\n",
+}
+
+
+AndOr: ast::Term = {
+    <mut ao: AndOr> "||" linebreak <mut pl: Pipeline> => {
+        pl.run_if = ast::RunIf::Failure;
+        ao.pipelines.push(pl);
+        ao
+    },
+
+    <mut ao: AndOr> "&&" linebreak <mut pl: Pipeline> => {
+        pl.run_if = ast::RunIf::Success;
+        ao.pipelines.push(pl);
+        ao
+    },
+
+    Pipeline => ast::Term {
+        pipelines: vec![<>],
+        background: false,
+    },
+}
+
+Pipeline: ast::Pipeline = {
+    PipeSequence => <>,
+    "!" <ps: PipeSequence> => ps,       // TODO
+}
+
+PipeSequence: ast::Pipeline = {
+    <mut pl: PipeSequence> "|" linebreak <c: Command> => {
+        pl.commands.push(c);
+        pl
+    },
+    Command => {
+        ast::Pipeline {
+            run_if: ast::RunIf::Always,
+            commands: vec![<>],
+        }
+    }
+}
+
+Command: ast::Command = {
+    SimpleCommand => <>,
+    CompoundCommand => <>,
+    ConditionCommand => <>,
+}
+
+CompoundCommand: ast::Command = {
+    IfClause => <>,
+    WhileClause => <>,
+    SubShell => <>,
+}
+
+SubShell: ast::Command = {
+    "(" <terms: CompoundList> ")" => ast::Command::SubShellGroup { terms: terms },
+}
+
+CompoundList: Vec<ast::Term> = {
+    linebreak <t: Term> => t,
+    linebreak <mut t: Term> <bg: separator> => {
+        let last = t.last_mut().unwrap();
+        last.background = bg;
+        t
+    },
+}
+
+Term: Vec<ast::Term> = {
+    <mut t: Term> <bg: separator> <ao: AndOr> => {
+        let last = t.last_mut().unwrap();
+        last.background = bg;
+        t.push(ao);
+        t
+    },
+    AndOr => vec![<>],
+}
+
+ConditionCommand: ast::Command = {
+    "[[" <is_not: "!"?> <expr: CondExpr> "]]" => {
+        ast::Command::Cond {
+            is_not: is_not.is_some(),
+            expr: None,
+        }
+    },
+}
+
+CondExpr: Box<ast::CondExpr> = {
+    <lhs: CondExpr> "||" <rhs: CondTerm> => Box::new(ast::CondExpr::Or(lhs, rhs)),
+    <lhs: CondExpr> "&&" <rhs: CondTerm> => Box::new(ast::CondExpr::And(lhs, rhs)),
+    CondTerm,
+}
+
+CondTerm: Box<ast::CondExpr> = {
+    <op: "-?"> <lhs: CondPrimary> =>? {
+        match op {
+            'z' => Ok(Box::new(ast::CondExpr::StrEq(lhs, Box::new(ast::CondExpr::Word(ast::Word(vec![ast::Span::Literal("".into())])))))),
+            'n' => Ok(Box::new(ast::CondExpr::StrNe(lhs, Box::new(ast::CondExpr::Word(ast::Word(vec![ast::Span::Literal("".into())])))))),
+            'a' | 'd' | 'e' | 'f' | 'h' | 's' | 'L' | 'N' => Ok(Box::new(ast::CondExpr::File(lhs, format!("-{}", op)))),
+            // "-b" | "-c" | "-g" |
+            // "-k" | "-p" | "-r" | "-t" | "-u" |
+            // "-w" | "-x" | "-O" | "-G" |
+            // "-S" => unimplemented!(),
+            _ => Err(ParseError::User {error: ast::Error::InvalidConditionalOperator}),
+        }
+    },
+
+    <lhs: CondPrimary> "=~" <text: "TEXT"> => Box::new(ast::CondExpr::Regex(lhs, text.into())),
+
+    CondPrimary => <>,
+
+    <lhs: CondPrimary> <op: "-??"> <rhs: CondTerm> =>? {
+        match op {
+            "-eq" => Ok(Box::new(ast::CondExpr::Eq(lhs, rhs))),
+            "-ne" => Ok(Box::new(ast::CondExpr::Ne(lhs, rhs))),
+            "-lt" => Ok(Box::new(ast::CondExpr::Lt(lhs, rhs))),
+            "-le" => Ok(Box::new(ast::CondExpr::Le(lhs, rhs))),
+            "-gt" => Ok(Box::new(ast::CondExpr::Gt(lhs, rhs))),
+            "-ge" => Ok(Box::new(ast::CondExpr::Ge(lhs, rhs))),
+            _ => Err(ParseError::User {error: ast::Error::InvalidConditionalOperator}),
+        }
+    },
+
+    <lhs: CondPrimary> "<" <rhs: CondTerm> => Box::new(ast::CondExpr::Lt(lhs, rhs)),
+    <lhs: CondPrimary> ">" <rhs: CondTerm>  => Box::new(ast::CondExpr::Gt(lhs, rhs)),
+    <lhs: CondPrimary> "=="  <rhs: CondTerm> => Box::new(ast::CondExpr::StrEq(lhs, rhs)),
+    <lhs: CondPrimary> "="  <rhs: CondTerm> => Box::new(ast::CondExpr::StrEq(lhs, rhs)),
+    <lhs: CondPrimary> "!="  <rhs: CondTerm> => Box::new(ast::CondExpr::StrNe(lhs, rhs)),
+}
+
+CondPrimary: Box<ast::CondExpr> = {
+    "(" <expr: CondExpr> ")" => expr,
+    Word => Box::new(ast::CondExpr::Word(<>)),
+}
+
+WhileClause: ast::Command = {
+    "while" <condition: CompoundList> "do" <body: CompoundList> "done" => {
+        ast::Command::While {
+            condition: condition,
+            body: body,
+        }
+    }
+}
+
+IfClause: ast::Command = {
+    "if" <condition: CompoundList> "then" <then_part: CompoundList> <elif_parts: ElifPart*> <else_part: ElsePart?> "fi" => {
+        ast::Command::If {
+            condition: condition,
+            then_part: then_part,
+            elif_parts: elif_parts,
+            else_part: else_part,
+            redirects: vec![],
+        }
+    }
+}
+
+ElifPart: ast::ElIf = {
+    "elif" <condition: CompoundList> "then" <then_part: CompoundList> => {
+        ast::ElIf {
+            condition: condition,
+            then_part: then_part,
+        }
+    }
+}
+
+ElsePart: Vec<ast::Term> = {
+    "else" <term: CompoundList> => term,
+}
+
+SimpleCommand: ast::Command = {
+    <prefix: CmdPrefix> <cmd: CmdName> <suffix: CmdSuffix> => {
+        let mut argv = vec![cmd];
+        argv.extend(suffix.1);
+
+        let mut redirects = prefix.1;
+        redirects.extend(suffix.0);
+
+        ast::Command::SimpleCommand {
+            external: false,
+            argv: argv,
+            redirects: redirects,
+            assignments: prefix.0,
+        }
+    },
+
+    <prefix: CmdPrefix> <cmd: CmdName> => {
+        ast::Command::SimpleCommand {
+            external: false,
+            argv: vec![cmd],
+            redirects: prefix.1,
+            assignments: prefix.0,
+        }
+    },
+
+    <prefix: CmdPrefix> => {
+        ast::Command::Assignment {
+            assignments: prefix.0,
+        }
+    },
+
+    <cmd: CmdName> <suffix: CmdSuffix> => {
+        let mut argv = vec![cmd];
+        argv.extend(suffix.1);
+        ast::Command::SimpleCommand {
+            external: false,
+            argv: argv,
+            redirects: suffix.0,
+            assignments: Vec::new(),
+        }
+    },
+
+    CmdName => {
+        ast::Command::SimpleCommand {
+            external: false,
+            argv: vec![<>],
+            redirects: Vec::new(),
+            assignments: Vec::new(),
+        }
+    },
+}
+
+CmdName: ast::Word = {
+    Word,       // Apply rule 7a
+    "[" => ast::Word(vec![ast::Span::Literal(String::from("["))]),
+}
+
+// CmdWord: ast::Word = {
+//     Word,       // Apply rule 7b
+//     "[" => ast::Word(vec![ast::Span::Literal(String::from("["))]),
+//     "]" => ast::Word(vec![ast::Span::Literal(String::from("]"))]),
+//     "=" => ast::Word(vec![ast::Span::Literal(String::from("="))]),
+// }
+
+CmdPrefix: (Vec<ast::Assignment>, Vec<ast::Redirection>) = {
+    IoRedirect => (Vec::new(), <>),
+    <mut prefix: CmdPrefix> <redirect: IoRedirect> => {
+        prefix.1.extend(redirect);
+        prefix
+    },
+
+    Assignment => (vec![<>], Vec::new()),
+
+    <mut prefix: CmdPrefix> <assignment: Assignment> => {
+        prefix.0.push(assignment);
+        prefix
+    },
+}
+
+CmdSuffix: (Vec<ast::Redirection>, Vec<ast::Word>) = {
+    IoRedirect => { (<>, Vec::new())},
+    <mut suffix: CmdSuffix> <redirect: IoRedirect> => {
+        suffix.0.extend(redirect);
+        suffix
+    },
+    Word => (Vec::new(), vec![<>]),
+    "]" => { (Vec::new(), vec![ast::Word(vec![ast::Span::Literal(String::from("]"))])]) },
+    // "=" => { (Vec::new(), ast::Word(vec![ast::Span::Literal(String::from("="))])) },
+    <mut suffix: CmdSuffix> <word: Word> => {
+        suffix.1.push(word);
+        suffix
+    },
+}
+
+RedirectList: Vec<ast::Redirection> = {
+    IoRedirect => <>,
+    <mut list: RedirectList> <redirect: IoRedirect> => {
+        list.extend(redirect);
+        list
+    },
+}
+
+IoRedirect: Vec<ast::Redirection> = {
+    IoFile => <>,
+    // IoHere,
+}
+
+IoFile: Vec<ast::Redirection> = {
+    <fd: "<"> <target: RedirectionFile> => {
+        vec![ast::Redirection::new_for_parser(fd, ast::RedirectionDirection::Input, target)]
+    },
+    <fd: "<&"> <target: RedirectionFd> => {
+        vec![ast::Redirection::new_for_parser(fd, ast::RedirectionDirection::Input, target)]
+    },
+    <fd: ">"> <target: RedirectionFile> => {
+        vec![ast::Redirection::new_for_parser(fd, ast::RedirectionDirection::Output, target)]
+    },
+    <fd: ">&"> <target: RedirectionFd> => {
+        vec![ast::Redirection::new_for_parser(fd, ast::RedirectionDirection::Output, target)]
+    },
+    <fd: ">|"> <target: RedirectionFile> => {
+        vec![ast::Redirection::new_for_parser(fd, ast::RedirectionDirection::OutputClobber, target)]
+    },
+    <fd: ">>"> <target: RedirectionFile> => {
+        vec![ast::Redirection::new_for_parser(fd, ast::RedirectionDirection::Append, target)]
+    },
+    <fd: "<>"> <target: RedirectionFile> => {
+        vec![ast::Redirection::new_for_parser(fd, ast::RedirectionDirection::InputOutput, target)]
+    },
+
+    "&>" <target: RedirectionFile> => {
+        // TODO: Should be checked the target can't be FD.
+        vec![
+            ast::Redirection::new_for_parser(None, ast::RedirectionDirection::Output, target),
+            ast::Redirection::new_for_parser(Some('2'), ast::RedirectionDirection::Output, ast::RedirectionType::Fd(1)),
+        ]
+    },
+
+    "&>>" <target: RedirectionFile> => {
+        // TODO: Should be checked the target can't be FD.
+        vec![
+            ast::Redirection::new_for_parser(None, ast::RedirectionDirection::Append, target),
+            ast::Redirection::new_for_parser(Some('2'), ast::RedirectionDirection::Output, ast::RedirectionType::Fd(1)),
+        ]
+    },
+}
+
+RedirectionFile: ast::RedirectionType = {
+    Word => ast::RedirectionType::File(<>),     // Apply rule 2
+}
+
+RedirectionFd: ast::RedirectionType = {
+    <target: Word> =>? {
+        match target.0.first() {
+            Some(ast::Span::Literal(text)) => {
+                if let Some(fd) = i32::from_str(text).ok() {
+                    Ok(ast::RedirectionType::Fd(fd))
+                } else if text == "-" {
+                    Ok(ast::RedirectionType::Close(0))
+                } else {
+                    Err(ParseError::User {
+                        error: ast::Error::InvalidRedirectionTarget,
+                    })
+                }
+            }
+            _ => {
+                Err(ParseError::User {
+                    error: ast::Error::InvalidRedirectionTarget,
+                })
+            }
+        }
+    },
+}
+
+
+IoHere: () = {
+    "<<" HereEnd,
+    "<<-" HereEnd,
+}
+
+HereEnd: () = {
+    Word,       // Apply rule 3
+}
+
+Assignment: ast::Assignment = {
+    <name: "TEXT"> <index: AssignIndex?> <append: AssignOp> <init: AssignInit> => {
+        ast::Assignment {
+            name: name.into(),
+            initializer: init,
+            index: index,
+            append: append,
+        }
+    }
+}
+
+AssignInit: ast::Initializer = {
+    "(" <w: Word*> ")" => {
+        ast::Initializer::Array(w)
+    },
+    <w: Word> => {
+        ast::Initializer::String(w)
+    },
+    Space => {
+        ast::Initializer::String(ast::Word(vec![]))
+    },
+}
+
+AssignOp: bool = {
+    "=" => false,
+    "=+" => true,
+}
+
+// index = { ("[" ~ (expr | index_all | command_substitution_span) ~ "]")? }
+
+
+AssignIndex: ast::Expr = {
+    "[" Expr "]" => ast::Expr::Literal(0),
+}
+
+Expr: ast::Expr = {
+}
+
+CommandSubstitutionSpan: ast::Word = {
+}
+
+Word: ast::Word = {
+    double_quoted_span => ast::Word(vec![<>]),
+    // "-?" => ast::Word(vec![ast::Span::Literal(format!("-{}", <>))]),
+    // "[" => ast::Word(vec![ast::Span::Literal(String::from(<>))]),
+    // "]" => ast::Word(vec![ast::Span::Literal(String::from(<>))]),
+    <s:"TEXT"> => ast::Word(vec![ast::Span::Literal(String::from(s))]),
+    ! => {
+        let msg = format!("{:?}", <>);
+        errors.push(<>);
+        ast::Word(vec![ast::Span::Literal(msg)])
+    },
+}
+
+double_quoted_span: ast::Span = {
+    "\"" <span: literal_in_double_quoted_span> "\"" Space? => span,
+}
+
+literal_in_double_quoted_span: ast::Span = {
+    <s: "TEXT"> => ast::Span::Literal(String::from(s)),
+}
+
+// Num: i32 = {
+//     <s: "TEXT"> =>? i32::from_str(s)
+//             .map_err(|err| ParseError::User{
+//                 error: ast::Error::ParseIntError
+//             })
+// }
+
+// UnsignedNum: usize = {
+//     <s: "TEXT"> =>? usize::from_str(s)
+//             .map_err(|err| ParseError::User{
+//                 error: ast::Error::ParseIntError
+//             })
+// }
+
+Space: () = {
+    " "
+}
