@@ -355,7 +355,7 @@ pub fn run_external_command(
                         options.read(true);
                     }
                     parser::RedirectionDirection::Output => {
-                        options.write(true).create(true);
+                        options.write(true).truncate(true).create(true);
                     }
                     parser::RedirectionDirection::Append => {
                         options.write(true).append(true);

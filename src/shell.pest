@@ -133,10 +133,13 @@ assignment_command = { assignment+ }
 //
 // Simple Command
 //
-fd = { ASCII_DIGIT* }
-redirect_direction = { !("<(" | ">(" | "<<") ~ ("<" | ">>" | ">|" | ">") }
-redirect_to_fd = ${ "&" ~ fd }
-redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
+redirect_fd = { ASCII_DIGIT? }
+redirect_amp = { "&"? }
+//redirect_op = ${ redirect_fd ~ (!("<(" | ">(" | "<<") ~ ("<" | ">>" | ">|" | ">")) ~ redirect_amp } // TODO: "<>"
+redirect_op = { "<" | ">>" | ">|" | ">" }  // TODO: "<>"
+redirect_posix = ${ redirect_fd ~ redirect_op ~ redirect_amp }
+redirect_ext = ${ "&>" | "&>>" }
+redirect = { (redirect_posix | redirect_ext) ~ word }
 word_or_redirect = _{ redirect | word | heredoc }
 reserved_word = ${
     (

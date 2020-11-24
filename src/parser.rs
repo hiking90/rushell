@@ -13,6 +13,7 @@ pub enum RedirectionDirection {
     Input,  // cat < foo.txt or here document
     Output, // cat > foo.txt
     Append, // cat >> foo.txt
+    // InputOutput, // cat <> foo.txt
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -922,41 +923,90 @@ impl ShellParser {
     // redirect_direction = { "<" | ">" | ">>" }
     // redirect_to_fd = ${ "&" ~ ASCII_DIGIT* }
     // redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
-    fn visit_redirect(&mut self, pair: Pair<Rule>) -> Redirection {
+    fn visit_redirect(&mut self, pair: Pair<Rule>) -> Vec<Redirection> {
         let mut inner = pair.into_inner();
-        let fd = inner.next().unwrap();
-        let symbol = inner.next().unwrap();
+        let op = inner.next().unwrap();
         let target = inner.next().unwrap();
 
-        let (direction, default_fd) = match symbol.as_span().as_str() {
-            "<" => (RedirectionDirection::Input, 0),
-            ">" | ">|" => (RedirectionDirection::Output, 1),
-            ">>" => (RedirectionDirection::Append, 1),
-            _ => unreachable!(),
-        };
+        let (direction, fd, is_target_fd, extend) = match op.as_rule() {
+            Rule::redirect_posix => {
+                let mut inner = op.into_inner();
 
-        let fd = fd.as_span().as_str().parse().unwrap_or(default_fd);
-        let target = match target.as_rule() {
-            Rule::word => RedirectionType::File(self.visit_word(target)),
-            Rule::redirect_to_fd => {
-                let target_fd = target
-                    .into_inner()
-                    .next()
-                    .unwrap()
-                    .as_span()
-                    .as_str()
-                    .parse()
-                    .unwrap();
-                RedirectionType::Fd(target_fd)
+                let fd = inner.next().unwrap();
+                let symbol = inner.next().unwrap();
+                let amp = inner.next().unwrap();
+
+                let (direction, default_fd) = match symbol.as_span().as_str() {
+                    "<" => (RedirectionDirection::Input, 0),
+                    ">" | ">|" => (RedirectionDirection::Output, 1),
+                    ">>" => (RedirectionDirection::Append, 1),
+                    // "<>" => (RedirectionDirection::Append, 1),
+                    _ => unreachable!(),
+                };
+
+                (direction, fd.as_span().as_str().parse().unwrap_or(default_fd), amp.as_span().as_str().len() != 0, false)
             }
+            Rule::redirect_ext => {
+                match op.as_span().as_str() {
+                    "&>" => (RedirectionDirection::Output, 1, false, true),
+                    "&>>" => (RedirectionDirection::Append, 1, false, true),
+                    _ => unreachable!(),
+                }
+            },
             _ => unreachable!(),
         };
 
-        Redirection {
-            fd,
-            direction,
-            target,
+        let target = if is_target_fd {
+            if let Ok(fd) = target.as_span().as_str().parse() {
+                RedirectionType::Fd(fd)
+            } else {
+                RedirectionType::File(self.visit_word(target))
+            }
+        } else {
+                RedirectionType::File(self.visit_word(target))
+        };
+
+        // let (direction, default_fd, extend) = match symbol.as_span().as_str() {
+        //     "<" => (RedirectionDirection::Input, 0, false),
+        //     ">" | ">|" => (RedirectionDirection::Output, 1, false),
+        //     ">>" => (RedirectionDirection::Append, 1, false),
+        //     "&>" => (RedirectionDirection::Output, 1, true),
+        //     "&>>" => (RedirectionDirection::Append, 1, true),
+        //     _ => unreachable!(),
+        // };
+
+        // let fd = fd.as_span().as_str().parse().unwrap_or(default_fd);
+        // let target = match target.as_rule() {
+        //     Rule::word => RedirectionType::File(self.visit_word(target)),
+        //     Rule::redirect_to_fd => {
+        //         let target_fd = target
+        //             .into_inner()
+        //             .next()
+        //             .unwrap()
+        //             .as_span()
+        //             .as_str()
+        //             .parse()
+        //             .unwrap();
+        //         RedirectionType::Fd(target_fd)
+        //     }
+        //     _ => unreachable!(),
+        // };
+
+        let mut res = vec![Redirection {
+            fd: fd,
+            direction: direction.clone(),
+            target: target,
+        }];
+
+        if extend {
+            res.push(Redirection {
+                fd: 2,
+                direction: direction,
+                target: RedirectionType::Fd(1),
+            })
         }
+
+        res
     }
 
     // assignment = { var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
@@ -1043,7 +1093,7 @@ impl ShellParser {
         for word_or_redirect in args {
             match word_or_redirect.as_rule() {
                 Rule::word => argv.push(self.visit_word(word_or_redirect)),
-                Rule::redirect => redirects.push(self.visit_redirect(word_or_redirect)),
+                Rule::redirect => redirects.extend(self.visit_redirect(word_or_redirect)),
                 Rule::heredoc => {
                     redirects.push(Redirection {
                         fd: 0, // stdin
