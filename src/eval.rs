@@ -812,6 +812,7 @@ pub fn run_terms(
             // Should we execute the pipline?
             match (last_status, &pipeline.run_if) {
                 (ExitStatus::ExitedWith(0), RunIf::Success) => (),
+                (ExitStatus::ExitedWith(0), RunIf::Failure) => continue,
                 (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
                 (ExitStatus::Break, _) => return ExitStatus::Break,
                 (ExitStatus::Continue, _) => return ExitStatus::Continue,
