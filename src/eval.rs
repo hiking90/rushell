@@ -32,8 +32,16 @@ macro_rules! bool_to_int {
 
 pub fn evaluate_expr(shell: &mut Shell, expr: &Expr) -> i32 {
     match expr {
-        Expr::Expr(sub_expr) => evaluate_expr(shell, sub_expr),
+        // Expr::Expr(sub_expr) => evaluate_expr(shell, sub_expr),
         Expr::Literal(value) => *value,
+        Expr::Word(word) => {
+            if let Ok(name) = expand_word_into_string(shell, word) {
+                shell.get_var_as_i32(&name).unwrap_or(0)
+            } else {
+                0
+            }
+        },
+        Expr::Minus(sub_expr) => - evaluate_expr(shell, sub_expr),
         Expr::Parameter { name } => shell.get_var_as_i32(&name).unwrap_or(0),
         Expr::Add(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) + evaluate_expr(shell, rhs),
         Expr::Sub(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) - evaluate_expr(shell, rhs),
@@ -160,12 +168,7 @@ pub fn evaluate_initializer(shell: &mut Shell, initializer: &Initializer) -> Res
 pub fn evaluate_heredoc(shell: &mut Shell, heredoc: &HereDoc) -> Result<RawFd> {
     let mut lines = Vec::new();
     for line in heredoc.lines() {
-        let mut words = Vec::new();
-        for word in line {
-            words.push(expand_word_into_string(shell, word)?);
-        }
-
-        lines.push(words.join(" "));
+        lines.push(expand_word_into_string(shell, line)?);
     }
 
     let mut body = lines.join("\n");

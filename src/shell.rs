@@ -70,6 +70,8 @@ pub struct Shell {
 
     commands: Option<completer::CommandMap>,
     completion: BTreeMap<String, Arc<Vec<ArgOption>>>,
+
+    shell_parser: parser::ShellParser,
 }
 
 impl Shell {
@@ -98,6 +100,7 @@ impl Shell {
             commands_scanner: completer::CommandScanner::new(),
             commands: None,
             completion: BTreeMap::new(),
+            shell_parser: parser::ShellParser::new(),
         }
     }
 
@@ -467,7 +470,7 @@ impl Shell {
         stdout: RawFd,
         stderr: RawFd,
     ) -> ExitStatus {
-        match parser::parse(&script) {
+        match self.shell_parser.parse(&script) {
             Ok(ast) => eval(self, &ast, stdin, stdout, stderr),
             Err(parser::ParseError::Empty) => {
                 // Just ignore.

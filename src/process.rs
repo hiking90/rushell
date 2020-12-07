@@ -334,6 +334,22 @@ pub fn wait_for_any_process(shell: &mut Shell, no_block: bool) -> Option<Pid> {
     Some(pid)
 }
 
+fn open_option_new(direction: &parser::RedirectionDirection) -> OpenOptions {
+    let mut options = OpenOptions::new();
+    match direction {
+        parser::RedirectionDirection::Input => {
+            options.read(true);
+        }
+        parser::RedirectionDirection::Output => {
+            options.write(true).truncate(true).create(true);
+        }
+        parser::RedirectionDirection::Append => {
+            options.write(true).append(true);
+        }
+    };
+    return options
+}
+
 /// Spawn a child process and execute a command.
 pub fn run_external_command(
     shell: &mut Shell,
@@ -345,22 +361,25 @@ pub fn run_external_command(
     let mut fds = Vec::new();
     for r in redirects {
         match r.target {
+            parser::RedirectionType::FileOrFd(ref target) => {
+                let target = expand_word_into_string(shell, target)?;
+                if let Ok(fd) = target.parse::<i32>() {
+                    fds.push((fd, r.fd as RawFd));
+                } else {
+                    let options = open_option_new(&r.direction);
+                    if let Ok(file) = options.open(&target) {
+                        fds.push((file.into_raw_fd(), r.fd as RawFd))
+                    } else {
+                        warn!("failed to open file: `{}'", target);
+                        return Ok(ExitStatus::ExitedWith(1));
+                    }
+                }
+            }
             parser::RedirectionType::Fd(ref fd) => {
                 fds.push((*fd, r.fd as RawFd));
             }
             parser::RedirectionType::File(ref wfilepath) => {
-                let mut options = OpenOptions::new();
-                match &r.direction {
-                    parser::RedirectionDirection::Input => {
-                        options.read(true);
-                    }
-                    parser::RedirectionDirection::Output => {
-                        options.write(true).truncate(true).create(true);
-                    }
-                    parser::RedirectionDirection::Append => {
-                        options.write(true).append(true);
-                    }
-                };
+                let options = open_option_new(&r.direction);
 
                 trace!("redirection: options={:?}", options);
                 let filepath = expand_word_into_string(shell, wfilepath)?;
@@ -374,7 +393,7 @@ pub fn run_external_command(
             parser::RedirectionType::HereDoc(ref heredoc) => {
                 fds.push((evaluate_heredoc(shell, heredoc)?, r.fd as RawFd))
             }
-            parser::RedirectionType::UnresolvedHereDoc(_) => {
+            parser::RedirectionType::UnresolvedHereDoc { .. } => {
                 // must be resolved in the parser
                 unreachable!()
             }
@@ -583,6 +602,33 @@ pub fn run_internal_command(
     let mut opened_fds = Vec::new();
     for r in redirects {
         match r.target {
+            parser::RedirectionType::FileOrFd(ref target) => {
+                let target = expand_word_into_string(shell, target)?;
+                if let Ok(fd) = target.parse::<i32>() {
+                    match r.fd {
+                        0 => stdin = fd,
+                        1 => stdout = fd,
+                        2 => stderr = fd,
+                        _ => (),
+                    }
+                } else {
+                    let options = open_option_new(&r.direction);
+                    if let Ok(file) = options.open(&target) {
+                        let src = file.into_raw_fd();
+                        let dst = r.fd as RawFd;
+                        opened_fds.push(src);
+                        match dst {
+                            0 => stdin = src,
+                            1 => stdout = src,
+                            2 => stderr = src,
+                            _ => (),
+                        }
+                    } else {
+                        warn!("failed to open file: `{}'", target);
+                        return Err(Error::from(InternalCommandError::BadRedirection));
+                    }
+                }
+            }
             parser::RedirectionType::Fd(ref fd) => match r.fd {
                 0 => stdin = *fd,
                 1 => stdout = *fd,
@@ -590,18 +636,7 @@ pub fn run_internal_command(
                 _ => (),
             },
             parser::RedirectionType::File(ref wfilepath) => {
-                let mut options = OpenOptions::new();
-                match &r.direction {
-                    parser::RedirectionDirection::Input => {
-                        options.read(true);
-                    }
-                    parser::RedirectionDirection::Output => {
-                        options.write(true).create(true);
-                    }
-                    parser::RedirectionDirection::Append => {
-                        options.write(true).append(true);
-                    }
-                };
+                let options = open_option_new(&r.direction);
 
                 trace!("redirection: options={:?}", options);
                 let filepath = expand_word_into_string(shell, wfilepath)?;
@@ -629,7 +664,7 @@ pub fn run_internal_command(
 
                 opened_fds.push(pipe_out);
             }
-            parser::RedirectionType::UnresolvedHereDoc(_) => {
+            parser::RedirectionType::UnresolvedHereDoc { .. } => {
                 // must be resolved in the parser
                 unreachable!()
             }

@@ -1,8 +1,11 @@
+use std::sync::Arc;
 use crate::builtins::InternalCommandContext;
 use crate::parser;
 use crate::process::ExitStatus;
-use pest::Parser;
+use std::iter::FromIterator;
 use std::io::Write;
+
+use pom::parser::*;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Alias {
@@ -10,19 +13,37 @@ pub struct Alias {
     pub body: String,
 }
 
-#[derive(Parser)]
-#[grammar = "builtins/alias.pest"]
-struct AliasParser;
+// name = { (ASCII_ALPHANUMERIC | "_" | "-" | "!")+ }
+// body = { "\""? ~ (!"\"" ~ ANY)+ ~ "~\""? }
+// alias = { SOI ~ name ~ "=" ~ body ~ EOI }
+
+fn name<'a>() -> Parser<'a, char, String> {
+    is_a(|c: char| "_-!".contains(c) || c.is_ascii_alphanumeric()).repeat(1..)
+    .map(String::from_iter)
+}
+
+fn body<'a>() -> Parser<'a, char, String> {
+    (
+        (sym('\"') * none_of("\"").repeat(1..) - sym('\"'))
+        | none_of(" \t\r\n").repeat(1..)
+    ).map(String::from_iter)
+}
+
+fn parse<'a>() -> Parser<'a, char, Alias> {
+    (name().expect("name") + sym('=').expect("=") * body().expect("body"))
+    .map(|(name, body)| {
+        Alias {
+            name: name,
+            body: body,
+        }
+    })
+}
+
 
 fn parse_alias(alias: &str) -> Result<Alias, parser::ParseError> {
-    AliasParser::parse(Rule::alias, alias)
-        .map_err(|err| parser::ParseError::Fatal(err.to_string()))
-        .and_then(|mut pairs| {
-            let mut inner = pairs.next().unwrap().into_inner();
-            let name = inner.next().unwrap().as_span().as_str().to_owned();
-            let body = inner.next().unwrap().as_str().to_owned();
-            Ok(Alias { name, body })
-        })
+    let chars: Vec<char> = alias.chars().collect();
+    parse().parse(Arc::new(InputV { input: chars.to_vec() }))
+        .map_err(|err| parser::error_convert(&chars.to_vec(), err))
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
@@ -35,11 +56,11 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
             Err(parser::ParseError::Expected(err)) |
             Err(parser::ParseError::Fatal(err)) => {
-                writeln!(ctx.stderr, "rushell: alias: {}", err).ok();
+                print_err!("alias: {}", err);
                 ExitStatus::ExitedWith(1)
             }
             Err(parser::ParseError::Empty) => {
-                writeln!(ctx.stderr, "rushell: alias: alias can't be empty string").ok();
+                print_err!("alias: alias can't be empty string");
                 ExitStatus::ExitedWith(1)
             }
         }

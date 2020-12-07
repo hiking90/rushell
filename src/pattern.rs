@@ -50,10 +50,13 @@ impl PatternWord {
 
         let pattern = self.into_string();
 
-        if glob::includes_glob(&pattern) {
-            if let Some(glob_paths) = glob::glob(&pattern) {
-                expanded_words.extend(glob_paths);
-            }
+        // if glob::includes_glob(&pattern) {
+        //     if let Some(mut glob_paths) = glob::glob(&pattern) {
+        //         expanded_words.append(&mut glob_paths);
+        //     }
+        // }
+        if let Some(mut glob_paths) = glob::glob(&pattern) {
+            expanded_words.append(&mut glob_paths);
         }
         if expanded_words.is_empty() {
             expanded_words.push(pattern);
