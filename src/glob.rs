@@ -6,25 +6,6 @@ use std::iter::FromIterator;
 use regex::Regex;
 use pom::parser::*;
 
-// use pest::Parser;
-// use pest::iterators::Pair;
-
-// #[derive(Parser)]
-// #[grammar = "glob.pest"]
-// struct GlobParser;
-
-// match_char_any = @{ (!"]" ~ ANY) }
-// // [abcd-f[:alpha:]]
-// match_char_span = { "[" ~ match_char_span_inner* ~ "]"}
-// match_char_span_inner = _{
-//     match_char_class |
-//     match_char_range |
-//     match_char_not |
-//     match_char_any
-// }
-// match_char_class = @{ "[:" ~ ASCII_ALPHANUMERIC+ ~ ":]" }
-// match_char_range = { match_char_any ~ "-" ~ match_char_any }
-// match_char_not = @{ ("!" | "^") ~ match_char_any }
 fn match_char_span<'a>() -> Parser<'a, char, String> {
 
     sym('[') *
@@ -142,128 +123,11 @@ fn path_span<'a>() -> Parser<'a, char, Vec<String>> {
     })
 }
 
-
-
-// fn parse_glob_span(pair: Pair<Rule>) -> String {
-//     let mut regex = String::new();
-
-//     for pair in pair.into_inner() {
-//         match pair.as_rule() {
-//             Rule::match_char_span => {
-//                 regex += "[";
-//                 for pair in pair.into_inner() {
-//                     match pair.as_rule() {
-//                         Rule::match_char_class => {
-//                             regex += pair.as_str();
-//                         }
-//                         Rule::match_char_range => {
-//                             regex += pair.as_str();
-//                         }
-//                         Rule::match_char_not => {
-//                             regex += &pair.as_str().replace("!", "^");
-//                         }
-//                         Rule::match_char_any => {
-//                             regex += pair.as_str();
-//                         }
-//                         _ => unreachable!(),
-//                     }
-//                 }
-//                 regex += "]";
-//             }
-//             Rule::match_string_span => {
-//                 let mut add_filter = false;
-//                 regex += "(";
-//                 for pair in pair.into_inner() {
-//                     match pair.as_rule() {
-//                         Rule::match_string_word => {
-//                             if add_filter == true {
-//                                 regex += "|";
-//                             }
-//                             regex += pair.as_str();
-//                             add_filter = true;
-//                         }
-//                         _ => unreachable!(),
-//                     }
-//                 }
-//                 regex += ")";
-//             }
-//             Rule::extglob => {
-
-//             }
-//             Rule::double_any_string => {
-//                 regex += ".*";
-//             }
-//             Rule::any_string => {
-//                 regex += &format!("[^{}]*", MAIN_SEPARATOR);
-//             }
-//             Rule::any_char => {
-//                 regex += "."
-//             }
-//             Rule::escaped_char |
-//             Rule::unescaped_char => {
-//                 let mut chars = pair.as_str().chars();
-//                 if pair.as_rule() == Rule::escaped_char {
-//                     chars.next().unwrap();  // Skip '\\' char
-//                 }
-//                 let ch = chars.next().unwrap();
-//                 match ch {
-//                     '\\' | '.' | '[' | ']' | '(' | ')' | '+' | '?' | '*' | '|' | '{' | '}' | '^' | '$'=> {
-//                         regex.push('\\');
-//                         regex.push(ch);
-//                     }
-//                     _ => regex.push(ch),
-//                 }
-//             }
-//             _ => unreachable!(),
-//         }
-//     }
-
-//     // println!("Regex : {:?}", regex);
-//     regex
-// }
-
-// fn parse_path_span(pair: Pair<Rule>) -> Vec<String> {
-//     let mut globs = Vec::new();
-
-//     for pair in pair.into_inner() {
-//         match pair.as_rule() {
-//             Rule::glob_span => {
-//                 globs.push(parse_glob_span(pair))
-//             }
-//             _ => unreachable!(),
-//         }
-//     }
-
-//     globs
-// }
-
 fn parse_glob(glob: &str) -> Option<Vec<String>> {
     let input: Vec<char> = glob.chars().collect();
     path_span().parse(Arc::new(InputV { input: input.to_vec() })).ok()
-    // let mut pairs = GlobParser::parse(Rule::glob, glob).ok()?;
-    // Some(parse_path_span(pairs.next().unwrap()))
 }
 
-// pub fn includes_glob(glob: &str) -> bool {
-//     GlobParser::parse(Rule::glob, glob).map_or_else(|_| false, |mut pairs|
-//         pairs.next().unwrap().into_inner().next().map_or_else(|| false, |pair| {
-//             for pair in pair.into_inner() {
-//                 match pair.as_rule() {
-//                     Rule::match_char_span |
-//                     Rule::match_string_span |
-//                     Rule::extglob |
-//                     Rule::double_any_string |
-//                     Rule::any_string |
-//                     Rule::any_char => {
-//                         return true;
-//                     }
-//                     _ => {}
-//                 }
-//             }
-//             false
-//         })
-//     )
-// }
 
 fn visit_dirs(path: &Path, strip: bool, depth: usize, file_regex: &Regex, dir_regex: &Regex) -> Option<Vec<String>> {
     let mut paths = Vec::new();
@@ -303,7 +167,7 @@ fn visit_dirs(path: &Path, strip: bool, depth: usize, file_regex: &Regex, dir_re
 pub fn glob_to_regex(glob: &str, match_all: bool) -> Option<(Regex, Regex)> {
     match parse_glob(&glob) {
         Some(mut patterns) => {
-            println!("glob_to_regex - {:?}", patterns);
+            // println!("glob_to_regex - {:?}", patterns);
             let last_pattern = patterns.pop()?;
             let mut dir_pattern = String::new();
 

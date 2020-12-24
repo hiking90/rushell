@@ -353,7 +353,7 @@ fn sequential_sep<'a>() -> Parser<'a, char, ()> {
     ).discard()
 }
 
-fn reserved_word<'a>() -> Parser<'a, char, ()> {
+pub fn reserved_word<'a>() -> Parser<'a, char, ()> {
     (
     tag("case")
     | tag("continue")
@@ -386,7 +386,7 @@ fn word_char<'a>(dynot: &'static str) -> Parser<'a, char, char> {
     // !one_of("|&; \t\r\n\"") * !one_of(dynot) * any()
 }
 
-fn silent_char<'a>() -> Parser<'a, char, ()> {
+pub fn silent_char<'a>() -> Parser<'a, char, ()> {
     tag("\\\n").discard()
 }
 

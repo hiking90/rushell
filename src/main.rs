@@ -2,9 +2,6 @@
 
 #[macro_use]
 extern crate lazy_static;
-// extern crate pest;
-// #[macro_use]
-// extern crate pest_derive;
 extern crate ansi_term;
 extern crate dirs;
 extern crate linefeed;
@@ -14,7 +11,6 @@ extern crate log;
 extern crate structopt;
 #[macro_use]
 extern crate failure;
-// extern crate glob;
 extern crate whoami;
 extern crate regex;
 
@@ -42,8 +38,6 @@ mod glob;
 mod syntaxer;
 #[cfg(test)]
 mod script_test;
-
-// mod pom_parser;
 
 // use crate::prompt::Prompt;
 use crate::variable::Value;

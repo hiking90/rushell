@@ -722,11 +722,10 @@ fn run_pipeline(
                 {
                     print_err!("error: no matches");
                     last_result = Some(ExitStatus::ExitedWith(1));
-                    break;
+                } else {
+                    print_err!("{:?}", err);
                 }
-
-                // TODO:
-                unreachable!();
+                break;
             }
         };
     }

@@ -14,8 +14,6 @@ exclude = ["test", "backup"]
 
 [dependencies]
 nix = "0.18.0"
-# pest = "2.1.0"
-# pest_derive = "2.1.0"
 ansi_term = "0.11"
 # linefeed = { package="rushell_deps_linefeed", path = "../linefeed", version = "0.6.0"}
 linefeed = { package="rushell_deps_linefeed", version = "0.6.0", git = "https://github.com/hiking90/rushell_deps_linefeed" }
@@ -30,7 +28,6 @@ whoami = "0"
 chrono = "0.4"
 pom = { path = "../pom", version = "3"}
 # pom = { version = "3", git = "https://github.com/hiking90/pom" }
-# pom = "3"
 
 [dependencies.regex]
 version = "1"

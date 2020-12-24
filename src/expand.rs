@@ -188,6 +188,7 @@ pub fn expand_param(
 }
 
 fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, bool)> {
+    println!("Span: {:?}", span);
     match span {
         Span::Literal(s) => Ok((vec![s.clone()], false)),
         Span::Parameter { name, op, quoted: _ } => {
@@ -290,7 +291,6 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
             failure::bail!("Bash Substring is not supported yet. `{:?}:{:?}:{:?}'", name, offset, length)
         }
     }
-
 }
 
 /// Expands a word int a `Vec`.
@@ -299,7 +299,6 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
     let mut current_word = Vec::new();
     for span in word.spans() {
         let (frags, expand) = expand_span_into_vec(shell, span)?;
-
         // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo="1 2 3"`.
         let frags_len = frags.len();
         for frag in frags {
@@ -328,7 +327,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
     }
 
     trace!("expand_word: word={:?}, to={:?}", word, words);
-    // println!("expand_word: word={:?}, to={:?}", word, words);
+    println!("expand_word: word={:?}, to={:?}", word, words);
     if words.is_empty() {
         Ok(vec![])
         // Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal(
