@@ -810,6 +810,7 @@ pub fn run_terms(
 ) -> ExitStatus {
     let mut last_status = ExitStatus::ExitedWith(0);
     for term in terms {
+        // println!("{:?}", term);
         for pipeline in &term.pipelines {
             // Should we execute the pipline?
             match (last_status, &pipeline.run_if) {

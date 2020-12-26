@@ -39,7 +39,7 @@ impl PatternWord {
 
     pub fn regex(&self, match_all:bool) -> Option<Regex> {
         match glob::glob_to_regex(&self.into_string(), match_all) {
-            Some((_, regex)) => Some(regex),
+            Some((_, regex, _)) => Some(regex),
             None => None,
         }
     }

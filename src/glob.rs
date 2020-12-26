@@ -89,41 +89,59 @@ fn extglob<'a>() -> Parser<'a, char, String> {
 //     unescaped_char
 //     )+
 // }
-fn glob_span<'a>() -> Parser<'a, char, String> {
+fn glob_span<'a>() -> Parser<'a, char, (String, bool)> {
     (
-        match_char_span()
-        | match_string_span()
-        | extglob()
-        | tag("**").map(|_| ".*".to_string())
-        | one_of("*?").map(|ch| if ch == '*' {
-                format!("[^{}]*", MAIN_SEPARATOR)
-            } else {
-                ".".to_string()
-            }
-        )
+        (
+            match_char_span()
+            | match_string_span()
+            | extglob()
+            | tag("**").map(|_| ".*".to_string())
+            | one_of("*?").map(|ch| if ch == '*' {
+                    format!("[^{}]*", MAIN_SEPARATOR)
+                } else {
+                    ".".to_string()
+                }
+            )
+        ).map(|s| (s, true))
                     // '\\' | '.' | '[' | ']' | '(' | ')' | '+' | '?' | '*' | '|' | '{' | '}' | '^' | '$'=> {
         | ((sym('\\') * any()) | any()).map(|ch| {
             if "\\.[]()+?*|{}^$".contains(ch) {
-                format!("\\{}", ch)
+                (format!("\\{}", ch), false)
             } else {
-                ch.to_string()
+                (ch.to_string(), false)
             }
         })
     ).repeat(1..)
-    .map(|strs| strs.join(""))
-}
-
-// path_span = { "/"* ~ glob_span ~ ("/"+ ~ glob_span)* }
-fn path_span<'a>() -> Parser<'a, char, Vec<String>> {
-    (sym('/').opt() * glob_span() + (sym('/') * glob_span()).repeat(0..))
-    .map(|(span, mut spans)| {
-        let mut res = vec![span];
-        res.append(&mut spans);
-        res
+    .map(|spans| {
+        let mut res_str = String::new();
+        let mut res_bool = false;
+        spans.iter().for_each(|(s, b)| {
+            res_str.push_str(s);
+            if *b == true {
+                res_bool = true;
+            }
+        });
+        (res_str, res_bool)
     })
 }
 
-fn parse_glob(glob: &str) -> Option<Vec<String>> {
+// path_span = { "/"* ~ glob_span ~ ("/"+ ~ glob_span)* }
+fn path_span<'a>() -> Parser<'a, char, (Vec<String>, bool)> {
+    (sym('/').opt() * glob_span() + (sym('/') * glob_span()).repeat(0..))
+    .map(|(span, spans)| {
+        let mut res = vec![span.0];
+        let mut rbool = span.1;
+        spans.into_iter().for_each(|s| {
+            res.push(s.0);
+            if s.1 == true {
+                rbool = s.1;
+            }
+        });
+        (res, rbool)
+    })
+}
+
+fn parse_glob(glob: &str) -> Option<(Vec<String>, bool)> {
     let input: Vec<char> = glob.chars().collect();
     path_span().parse(Arc::new(InputV { input: input.to_vec() })).ok()
 }
@@ -164,9 +182,9 @@ fn visit_dirs(path: &Path, strip: bool, depth: usize, file_regex: &Regex, dir_re
     Some(paths)
 }
 
-pub fn glob_to_regex(glob: &str, match_all: bool) -> Option<(Regex, Regex)> {
+pub fn glob_to_regex(glob: &str, match_all: bool) -> Option<(Regex, Regex, bool)> {
     match parse_glob(&glob) {
-        Some(mut patterns) => {
+        Some((mut patterns, has_pattern)) => {
             // println!("glob_to_regex - {:?}", patterns);
             let last_pattern = patterns.pop()?;
             let mut dir_pattern = String::new();
@@ -188,7 +206,7 @@ pub fn glob_to_regex(glob: &str, match_all: bool) -> Option<(Regex, Regex)> {
                 dir_pattern.push('$');
             }
             // println!("glob_to_regex - {} {}", dir_pattern, file_pattern);
-            Some((Regex::new(&dir_pattern).ok()?, Regex::new(&file_pattern).ok()?))
+            Some((Regex::new(&dir_pattern).ok()?, Regex::new(&file_pattern).ok()?, has_pattern))
         }
         None => None,
     }
@@ -201,7 +219,10 @@ pub fn glob(glob: &str) -> Option<Vec<String>> {
         return Some(vec![path.to_str()?.to_owned()]);
     }
 
-    let (dir_regex, file_regex) = regexs?;
+    let (dir_regex, file_regex, has_pattern) = regexs?;
+    if has_pattern == false {
+        return Some(vec![path.to_str()?.to_owned()]);
+    }
 
     let parent = path.parent().map_or_else(|| Path::new(""), |p| p.into());
     let available = path.ancestors().find(|a| a.exists());
