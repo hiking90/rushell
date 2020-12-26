@@ -1,9 +1,11 @@
+use crate::shell;
 use crate::eval::*;
-use crate::parser::{ExpansionOp, ProcSubstType, Span, Word};
+use crate::parser::{ExpansionOp, ProcSubstType, Span, Word, Expr};
 use crate::pattern::{PatternWord};
 use crate::shell::Shell;
 use crate::variable::Value;
 use crate::utils::home_dir_for_user;
+use crate::variable;
 use failure::Error;
 use std::fs::File;
 use std::io::prelude::*;
@@ -50,16 +52,94 @@ pub fn expand_alias(shell: &Shell, argv: &[Word]) -> Vec<Word> {
         .unwrap_or_else(|| argv.to_owned())
 }
 
-/// Expands a parameter (`$foo` in e.g. `echo $foo`). It returns `Vec` since
-/// `op` can be array expansion. `None` value represents *null*.
-pub fn expand_param(
+fn value_get_or_empty(value: Option<Value>) -> Vec<String> {
+    match value {
+        Some(Value::Array(elems)) => elems,
+        Some(Value::String(s)) => vec![s],
+        _ => vec!["".to_string()],
+    }
+}
+
+fn param_get_or_action(
     shell: &mut Shell,
     name: &str,
+    op: &str,
+    word: &Word,
+    value: Option<Value>,
+) -> Result<Vec<String>> {
+    let word = expand_word_into_string(shell, word)?;
+
+    let res = match value {
+        Some(value) => {
+            let v = value_get_or_empty(Some(value));
+            if op == "-" || op == "=" || (v.len() > 0 && v[0].len() > 0) {
+                v
+            } else if op == ":-" {
+                vec![word]
+            } else if op == ";=" {
+                shell.set(name, Value::String(word.clone()), false);
+                vec![word]
+            } else {
+                failure::bail!("unsupported expansion operator `{}'", op)
+            }
+        }
+
+        None => {
+            match op {
+                ":-" | "-" => vec![word],
+                ":=" | "=" => {
+                    shell.set(name, Value::String(word.clone()), false);
+                    vec![word]
+                }
+                _ => {
+                    failure::bail!("unsupported expansion operator `{}'", op)
+                }
+            }
+        }
+    };
+
+    Ok(res)
+}
+
+enum Index {
+    Position(usize),
+    All,
+    Invalid,
+}
+
+fn param_index(shell: &mut Shell, span: &Box<Span>) -> Index {
+    let idx = match expand_span_into_vec(shell, &span) {
+        Ok(res) => res.0.join(""),
+        Err(_) => return Index::Invalid,
+    };
+    if let Ok(idx) = idx.parse::<i32>() {
+        if idx < 0 {
+            warn!("the index must be larger than or equals 0: index={}", idx);
+            Index::Invalid
+        } else {
+            Index::Position(idx as usize)
+        }
+    } else if idx == "*" || idx == "@" {
+        Index::All
+    } else {
+        warn!(
+            "the index must be number or '*' or '@': index={:?}", idx
+        );
+        Index::Invalid
+    }
+}
+
+/// Expands a parameter (`$foo` in e.g. `echo $foo`). It returns `Vec` since
+/// `op` can be array expansion. `None` value represents *null*.
+fn expand_param(
+    shell: &mut Shell,
+    name: &str,
+    index: Option<Index>,
     op: &ExpansionOp,
-) -> Result<Vec<Option<String>>> {
+) -> Result<Vec<String>> {
     match name {
         "?" => {
-            return Ok(vec![Some(shell.last_status().to_string())]);
+            return Ok(vec![shell.last_status().to_string()]);
         }
         "!" => {
             let pgid = match shell.last_back_job() {
@@ -67,67 +147,76 @@ pub fn expand_param(
                 None => 0.to_string(),
             };
 
-            return Ok(vec![Some(pgid)]);
+            return Ok(vec![pgid]);
         }
         "0" => {
-            return Ok(vec![Some(shell.script_name.clone())]);
+            return Ok(vec![shell.script_name.clone()]);
         }
         "$" => {
-            return Ok(vec![Some(shell.shell_pgid.to_string())]);
+            return Ok(vec![shell.shell_pgid.to_string()]);
         }
         "#" => {
-            return Ok(vec![Some(shell.current_frame().num_args().to_string())]);
+            return Ok(vec![shell.current_frame().num_args().to_string()]);
         }
         "*" => {
             let args = shell.current_frame().get_string_args();
             let expanded = args.join(" ");
-            return Ok(vec![Some(expanded)]);
+            return Ok(vec![expanded]);
         }
         "@" => {
             let args = shell.current_frame().get_string_args();
-            return Ok(args.iter().map(|a| Some(a.to_owned())).collect());
+            return Ok(args.iter().map(|a| a.to_owned()).collect());
         }
         _ => {
             if let Some(var) = shell.get(name) {
                 // $<name> is defined.
-                let value = var.value();
-                match (op, value) {
-                    (ExpansionOp::Length, Some(_)) => {     // TODO: Support array length
-                        return Ok(vec![Some(var.as_str().len().to_string())]);
+
+                let value = if let Some(index) = index {
+                    match index {
+                        Index::Position(pos) => var.value_at(pos as usize).map(|v| Value::String(v.to_string())),
+                        Index::All => var.value().to_owned(),
+                        Index::Invalid => None,
                     }
-                    (ExpansionOp::Length, None) => {
-                        return Ok(vec![Some(0.to_string())]);
+                } else {
+                    var.value().to_owned()
+                };
+
+                match op {
+                    ExpansionOp::Length => {
+                        let len = match value {
+                            Some(Value::Array(elems)) => elems.len(),
+                            Some(Value::String(s)) => s.len(),
+                            _ => 0,
+                        };
+                        return Ok(vec![len.to_string()]);
                     }
-                    (ExpansionOp::GetOrAction(_, _), None) => {
-                        return Ok(vec![None]);
+
+                    ExpansionOp::GetOrEmpty => return Ok(value_get_or_empty(value)),
+
+                    ExpansionOp::GetOrAction(op, word) => {
+                        return param_get_or_action(shell, name, op, word, value);
                     }
-                    (
-                        ExpansionOp::Subst {
-                            pattern,
-                            replacement,
-                            op,
-                        },
-                        Some(_),
-                    ) => {
-                        let content = var.as_str().to_string();
+
+                    ExpansionOp::Subst {
+                        pattern,
+                        replacement,
+                        op,
+                    } => {
+                        let content = variable::value_as_str(&value).to_string();
                         let replaced =
                             crate::pattern::replace_pattern(
                                 &PatternWord::new(vec![pattern.to_string()]),
                                 &content, replacement,
                                 op.unwrap_or(' ') == '/');
-                        return Ok(vec![Some(replaced)]);
+                        return Ok(vec![replaced]);
                     }
 
-                    (ExpansionOp::Prefix(_), _) => {
+                    ExpansionOp::Prefix(_) => {
                         failure::bail!("Unsupported Parameter Expansion of Prefix `{}'", name);
                     }
 
-                    (ExpansionOp::Indices(_), Some(_)) => {
+                    ExpansionOp::Indices(_) => {
                         failure::bail!("Unsupported Parameter Expansion of Array Indices `{}'", name);
-                    }
-
-                    (_, _) => {
-                        return Ok(vec![Some(var.as_str().to_string())]);
                     }
                 };
             }
@@ -141,7 +230,7 @@ pub fn expand_param(
             failure::bail!("Unsupported Parameter Expansion of Prefix `{}'", name);
         }
         ExpansionOp::Indices(_) => {
-            Ok(vec![Some("0".to_owned())])
+            Ok(vec!["0".to_owned()])
         }
         ExpansionOp::Length => {
             if shell.nounset {
@@ -149,7 +238,7 @@ pub fn expand_param(
                 std::process::exit(1);
             }
 
-            Ok(vec![Some("0".to_owned())])
+            Ok(vec!["0".to_owned()])
         }
         ExpansionOp::GetOrEmpty => {
             if shell.nounset {
@@ -157,17 +246,17 @@ pub fn expand_param(
                 std::process::exit(1);
             }
 
-            Ok(vec![Some("".to_owned())])
+            Ok(vec!["".to_owned()])
         }
         ExpansionOp::GetOrAction(op, word) => {
             match op.as_str() {
                 ":-" | "-" => {
-                    expand_word_into_string(shell, word).map(|s| vec![Some(s)])
+                    expand_word_into_string(shell, word).map(|s| vec![s])
                 }
                 ":=" | "=" => {
                     let content = expand_word_into_string(shell, word)?;
                     shell.set(name, Value::String(content.clone()), false);
-                    Ok(vec![Some(content)])
+                    Ok(vec![content])
                 }
                 _ => {
                     failure::bail!("unsupported expansion operator `{}'", op)
@@ -183,61 +272,96 @@ pub fn expand_param(
         //     shell.set(name, Value::String(content.clone()), false);
         //     Ok(vec![Some(content)])
         // }
-        ExpansionOp::Subst { .. } => Ok(vec![Some("".to_owned())]),
+        ExpansionOp::Subst { .. } => Ok(vec!["".to_owned()]),
     }
 }
 
+#[test]
+fn test_expand_param() -> Result<()> {
+    let mut shell = shell::Shell::new();
+
+    shell.run_str("BB=( Arch Ubuntu Fedora Suse )");
+
+    assert_eq!(
+        expand_param(&mut shell, "BB", Some(Index::Position(1)), &ExpansionOp::GetOrEmpty)?,
+        vec!["Ubuntu".to_string()],
+    );
+
+    assert_eq!(
+        expand_param(&mut shell, "BB", Some(Index::All), &ExpansionOp::GetOrEmpty)?,
+        vec!["Arch".to_string(), "Ubuntu".to_string(), "Fedora".to_string(), "Suse".to_string()],
+    );
+
+    assert_eq!(
+        expand_param(&mut shell, "BB", Some(Index::Position(1)),
+            &ExpansionOp::GetOrAction(
+                ":-".to_string(),
+                Word(vec![Span::Literal("linux".to_string())])
+            )
+        )?,
+        vec!["Ubuntu".to_string()],
+    );
+
+    let linux = "linux".to_string();
+    assert_eq!(
+        expand_param(&mut shell, "A", None,
+            &ExpansionOp::GetOrAction(
+                ":-".to_string(),
+                Word(vec![Span::Literal(linux.clone())])
+            )
+        )?,
+        vec![linux.clone()],
+    );
+
+    let world = "World".to_string();
+    assert_eq!(
+        expand_param(&mut shell, "A", None,
+            &ExpansionOp::GetOrAction(
+                ":=".to_string(),
+                Word(vec![Span::Literal(world.clone())])
+            )
+        )?,
+        vec![world.clone()],
+    );
+
+    assert_eq!(
+        expand_param(&mut shell, "A", None,
+            &ExpansionOp::GetOrAction(
+                ":-".to_string(),
+                Word(vec![Span::Literal(linux.clone())])
+            )
+        )?,
+        vec![world.clone()],
+    );
+
+    Ok(())
+}
+
 fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, bool)> {
-    println!("Span: {:?}", span);
     match span {
         Span::Literal(s) => Ok((vec![s.clone()], false)),
-        Span::Parameter { name, op, quoted: _ } => {
+
+        Span::Parameter { name, index, op, quoted: _ } => {
             let (names, _) = expand_span_into_vec(shell, name)?;
 
             let mut frags = Vec::new();
+
             for name in names {
-                for value in expand_param(shell, &name, op)? {
-                    if let Some(frag) = value {
-                        frags.push(frag);
-                    }
-                }
+                let idx = if let Some(index) = index {
+                    Some(param_index(shell, index))
+                } else {
+                    None
+                };
+
+                let mut values = expand_param(shell, &name, idx, op)?;
+                frags.append(&mut values);
+
+                break;      // Only the first name is used.
             }
 
-            // (frags, !quoted)
             Ok((frags, false))
         }
-        Span::ArrayParameter {
-            name,
-            index,
-            quoted,
-        } => {
-            let mut result = (vec![], !quoted);
-            let idx = expand_span_into_vec(shell, index)?.0.join("");
-            if let Ok(idx) = idx.parse::<i32>() {
-                if idx < 0 {
-                    warn!(
-                        "the index must be larger than or equals 0: var={}, index={}",
-                        name, idx
-                    );
-                } else {
-                    if let Some(frag) = shell.get(name)
-                        .map(|v| v.value_at(idx as usize).to_string()) {
-                        result = (vec![frag], !quoted);
-                    }
-                }
-            } else if idx == "*" || idx == "@" {
-                if let Some(value) = shell.get(name) {
-                    let values = value.array().map_or(vec![], |elems| elems.map(|frag| frag.to_string()).collect());
-                    let lit = if *quoted {
-                        vec![values.join(" ")]
-                    } else {
-                        values.into_iter().map(|v| v).collect()
-                    };
-                    result = (lit, !quoted)
-                }
-            }
-            Ok(result)
-        }
+
         Span::ArithExpr { expr } => {
             let result = evaluate_expr(shell, expr).to_string();
             Ok((vec![result], false))
@@ -287,10 +411,156 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
                 }
             }
         }
-        Span::SubString { name, offset, length } => {
-            failure::bail!("Bash Substring is not supported yet. `{:?}:{:?}:{:?}'", name, offset, length)
+        Span::SubString { param, offset, length } => {
+            let (values, quoted) = expand_span_into_vec(shell, param)?;
+            let offset = evaluate_expr(shell, offset);
+
+            if offset < 0 {
+                failure::bail!("substring expression < 0");
+            }
+
+            let offset = offset as usize;
+
+            match values.len() {
+                0 => {
+                    Ok((values, quoted))
+                }
+                1 => {
+                    let v = if let Some(len) = length {
+                        let len = evaluate_expr(shell, &len);
+
+                        if len < 0 {
+                            failure::bail!("substring expression < 0");
+                        }
+
+                        values[0].get(offset .. offset + len as usize)
+                    } else {
+                        values[0].get(offset ..)
+                    };
+                    Ok((vec![v.unwrap_or_else(|| "").to_string()], quoted))
+                }
+                _ => {
+                    let v = if let Some(len) = length {
+                        let len = evaluate_expr(shell, &len);
+                        if len < 0 {
+                            failure::bail!("substring expression < 0");
+                        }
+                        values.get(offset .. offset + len as usize)
+                    } else {
+                        values.get(offset ..)
+                    };
+
+                    match v {
+                        Some(v) => {
+                            Ok((v.iter().map(|v| v.to_owned()).collect(), quoted))
+                        }
+                        None => {
+                            Ok((vec!["".to_string()], quoted))
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+#[test]
+fn test_expand_span_into_vec() -> Result<()> {
+    let mut shell = shell::Shell::new();
+
+    shell.run_str("BB=( Arch Ubuntu Fedora Suse )");
+
+    assert_eq!(
+        expand_span_into_vec(&mut shell,
+            &Span::SubString {
+                param: Box::new(
+                    Span::Parameter {
+                        name: Box::new(Span::Literal("BB".to_string())),
+                        index: Some(Box::new(Span::Literal("1".to_string()))),
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: false,
+                    }
+                ),
+                offset: Box::new(Expr::Literal(2)),
+                length: None,
+            }
+        )?,
+        (vec!["untu".to_string()], false),
+    );
+
+    assert_eq!(
+        expand_span_into_vec(&mut shell,
+            &Span::SubString {
+                param: Box::new(
+                    Span::Parameter {
+                        name: Box::new(Span::Literal("BB".to_string())),
+                        index: Some(Box::new(Span::Literal("1".to_string()))),
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: false,
+                    }
+                ),
+                offset: Box::new(Expr::Literal(2)),
+                length: Some(Box::new(Expr::Literal(0))),
+            }
+        )?,
+        (vec!["".to_string()], false),
+    );
+
+    assert_eq!(
+        expand_span_into_vec(&mut shell,
+            &Span::SubString {
+                param: Box::new(
+                    Span::Parameter {
+                        name: Box::new(Span::Literal("BB".to_string())),
+                        index: Some(Box::new(Span::Literal("1".to_string()))),
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: false,
+                    }
+                ),
+                offset: Box::new(Expr::Literal(2)),
+                length: Some(Box::new(Expr::Literal(1))),
+            }
+        )?,
+        (vec!["u".to_string()], false),
+    );
+
+    assert_eq!(
+        expand_span_into_vec(&mut shell,
+            &Span::SubString {
+                param: Box::new(
+                    Span::Parameter {
+                        name: Box::new(Span::Literal("BB".to_string())),
+                        index: Some(Box::new(Span::Literal("*".to_string()))),
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: false,
+                    }
+                ),
+                offset: Box::new(Expr::Literal(2)),
+                length: None,
+            }
+        )?,
+        (vec!["Fedora".into(), "Suse".into()], false),
+    );
+
+    assert_eq!(
+        expand_span_into_vec(&mut shell,
+            &Span::SubString {
+                param: Box::new(
+                    Span::Parameter {
+                        name: Box::new(Span::Literal("BB".to_string())),
+                        index: Some(Box::new(Span::Literal("*".to_string()))),
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: false,
+                    }
+                ),
+                offset: Box::new(Expr::Literal(1)),
+                length: Some(Box::new(Expr::Literal(2))),
+            }
+        )?,
+        (vec!["Ubuntu".into(), "Fedora".into()], false),
+    );
+
+    Ok(())
 }
 
 /// Expands a word int a `Vec`.
@@ -327,7 +597,6 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
     }
 
     trace!("expand_word: word={:?}, to={:?}", word, words);
-    println!("expand_word: word={:?}, to={:?}", word, words);
     if words.is_empty() {
         Ok(vec![])
         // Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal(

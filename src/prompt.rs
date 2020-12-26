@@ -94,8 +94,9 @@ impl PowerLine {
                  self.arrow_format(theme.path_basename, None))
             };
 
-            format!("\x01{}\x02 \u{E0A0} {}{} \x01{}\x02{}{}{}",
+            format!("\x01{}\x02 \u{E0A0} {} {}{} \x01{}\x02{}{}{}",
                 style.prefix(),
+                git.branch,
                 if git.unstaged {"!"} else if git.staged {"+"} else {"*"},
                 if git.untracked {"?"} else {""},
                 style.suffix(),

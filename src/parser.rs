@@ -262,15 +262,16 @@ pub enum Span {
     // $foo, ${foo}, ${foo:-default}, ...
     Parameter {
         name: Box<Span>,
+        index: Option<Box<Span>>,
         op: ExpansionOp,
         quoted: bool,
     },
     // $${foo[1]} ...
-    ArrayParameter {
-        name: String,
-        index: Box<Span>,
-        quoted: bool,
-    },
+    // ArrayParameter {
+    //     name: String,
+    //     index: Box<Span>,
+    //     quoted: bool,
+    // },
     // $(echo hello && echo world)
     Command {
         body: Vec<Term>,
@@ -287,7 +288,7 @@ pub enum Span {
     },
 
     SubString {
-        name: Box<Span>,
+        param: Box<Span>,
         offset: Box<Expr>,
         length: Option<Box<Expr>>,
     }
@@ -431,8 +432,8 @@ fn double_quoted_span<'a>() -> Parser<'a, char, Vec<Span>> {
     ).map(|mut spans| {
         spans.iter_mut().for_each(|span| {
             match span {
-                Span::Parameter{name: _, op: _, quoted} => *quoted = true,
-                Span::ArrayParameter{name: _, index: _, quoted} => *quoted = true,
+                Span::Parameter{name: _, op: _, quoted, ..} => *quoted = true,
+                // Span::ArrayParameter{name: _, index: _, quoted} => *quoted = true,
                 Span::Command{body: _, quoted} => *quoted = true,
                 _ => {}
             }
@@ -532,6 +533,7 @@ fn param_span<'a>() -> Parser<'a, char, Span> {
     .map(|name| {
         Span::Parameter {
             name: Box::new(Span::Literal(name)),
+            index: None,
             op: ExpansionOp::GetOrEmpty,
             quoted: false,
         }
@@ -943,9 +945,10 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
             )
             + word(WordType::CmdWord)
         )
-        .map(|((name, op), word)|{
+        .map(|(((name, idx), op), word)|{
             Span::Parameter {
-                name: Box::new(name),
+                name: name,
+                index: idx,
                 op: ExpansionOp::GetOrAction(op.into(), word),
                 quoted: false,
             }
@@ -954,7 +957,14 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
         | (parameter() - sym(':') + expr() + (sym(':') * expr()).opt())
         .map(|((param, offset), len)|{
             Span::SubString {
-                name: Box::new(param),
+                param: Box::new(
+                    Span::Parameter {
+                        name: param.0,
+                        index: param.1,
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: false,
+                    }
+                ),
                 offset: offset,
                 length: len,
             }
@@ -964,6 +974,7 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
         .map(|(name, op)|{
             Span::Parameter{
                 name: Box::new(Span::Literal(name)),
+                index: None,
                 op: ExpansionOp::Prefix(op),
                 quoted: false,
             }
@@ -973,6 +984,7 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
         .map(|(name, op)|{
             Span::Parameter{
                 name: Box::new(Span::Literal(name)),
+                index: Some(Box::new(Span::Literal(op.to_string()))),
                 op: ExpansionOp::Indices(op),
                 quoted: false,
             }
@@ -981,7 +993,8 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
         | (sym('#') * parameter())
         .map(|param|{
             Span::Parameter{
-                name: Box::new(param),
+                name: param.0,
+                index: param.1,
                 op: ExpansionOp::Length,
                 quoted: false,
             }
@@ -990,7 +1003,8 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
         | (parameter() + (tag("##") | tag("#") | tag("%%") | tag("%")) + word(WordType::CmdWord))
         .map(|((param, op), word)|{
             Span::Parameter{
-                name: Box::new(param),
+                name: param.0,
+                index: param.1,
                 op: ExpansionOp::GetOrAction(op.to_string(), word),
                 quoted: false,
             }
@@ -1007,7 +1021,8 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
                 None => "".to_string(),
             };
             Span::Parameter {
-                name: Box::new(param),
+                name: param.0,
+                index: param.1,
                 op: ExpansionOp::Subst {
                     pattern: pattern,
                     replacement: replacement,
@@ -1020,7 +1035,8 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
         | (parameter())
         .map(|param| {
             Span::Parameter {
-                name: Box::new(param),
+                name: param.0,
+                index: param.1,
                 op: ExpansionOp::GetOrEmpty,
                 quoted: false,
             }
@@ -1053,21 +1069,22 @@ fn array_index<'a>() -> Parser<'a, char, Span> {
     - sym(']')
 }
 
-fn parameter<'a>() -> Parser<'a, char, Span> {
+fn parameter<'a>() -> Parser<'a, char, (Box<Span>, Option<Box<Span>>)> {
     (var_name() + array_index().opt())
     .map(|(name, idx)|{
-        if let Some(idx) = idx {
-            Span::ArrayParameter {
-                name: name,
-                index: Box::new(idx),
-                quoted: false,
-            }
-        } else {
-            Span::Literal(name)
-        }
+        (Box::new(Span::Literal(name)), idx.map(|i| Box::new(i)))
+        // if let Some(idx) = idx {
+        //     Span::ArrayParameter {
+        //         name: name,
+        //         index: Box::new(idx),
+        //         quoted: false,
+        //     }
+        // } else {
+        //     Span::Literal(name)
+        // }
     })
 
-    | (one_of("?$!*@#-") | is_a(|c: char| c.is_ascii_digit())).map(|c| Span::Literal(c.to_string()))
+    | (one_of("?$!*@#-") | is_a(|c: char| c.is_ascii_digit())).map(|c| (Box::new(Span::Literal(c.to_string())), None))
 
 }
 
@@ -2032,6 +2049,7 @@ macro_rules! param {
         Word(vec![Span::Parameter {
             name: Box::new(Span::Literal($name.to_string())),
             op: $op,
+            index: None,
             quoted: $quoted,
         }])
     };
@@ -3465,6 +3483,7 @@ pub fn test_expansions() {
                                     Span::Literal("a".into()),
                                     Span::Parameter {
                                         name: Box::new(Span::Literal("xyz".into())),
+                                        index: None,
                                         op: ExpansionOp::GetOrEmpty,
                                         quoted: false,
                                     },
@@ -3498,6 +3517,7 @@ pub fn test_expansions() {
                                 op: ExpansionOp::GetOrAction(":-".into(), Word(vec![Span::Literal(
                                     "Current".into(),
                                 )])),
+                                index: None,
                                 quoted: false,
                             }]),
                             Word(vec![
@@ -3507,6 +3527,7 @@ pub fn test_expansions() {
                                     op: ExpansionOp::GetOrAction(":=".into(), Word(vec![Span::Literal(
                                         "TERM".into(),
                                     )])),
+                                    index: None,
                                     quoted: false,
                                 },
                                 Span::Literal("\"".to_owned()),
@@ -3516,12 +3537,14 @@ pub fn test_expansions() {
                                 Span::Parameter {
                                     name: Box::new(Span::Literal("TERM".into())),
                                     op: ExpansionOp::GetOrEmpty,
+                                    index: None,
                                     quoted: true,
                                 },
                                 Span::Literal(" len=".into()),
                                 Span::Parameter {
                                     name: Box::new(Span::Literal("TERM".into())),
                                     op: ExpansionOp::Length,
+                                    index: None,
                                     quoted: true,
                                 },
                             ]),
@@ -3548,6 +3571,7 @@ pub fn test_expansions() {
                             lit!("echo"),
                             Word(vec![Span::Parameter {
                                 name: Box::new(Span::Literal("var".into())),
+                                index: None,
                                 quoted: false,
                                 op: ExpansionOp::Subst {
                                     pattern: "a*/e".into(),
@@ -4453,18 +4477,21 @@ pub fn test_heredoc() {
                                         Span::Parameter {
                                             name: Box::new(Span::Literal("PWD".into())),
                                             op: ExpansionOp::GetOrEmpty,
+                                            index: None,
                                             quoted: false
                                         },
                                         Span::Literal(" <".to_string()),
                                         Span::Parameter {
                                             name: Box::new(Span::Literal("product_name".into())),
                                             op: ExpansionOp::GetOrEmpty,
+                                            index: None,
                                             quoted: false
                                         },
                                         Span::Literal(">-<".to_string()),
                                         Span::Parameter {
                                             name: Box::new(Span::Literal("build_variant".into())),
                                             op: ExpansionOp::GetOrEmpty,
+                                            index: None,
                                             quoted: false
                                         },
                                         Span::Literal(">".to_string())

@@ -56,13 +56,10 @@ impl Variable {
     }
 
     /// References its value as `$foo[expr]`.
-    pub fn value_at(&self, index: usize) -> &str {
+    pub fn value_at(&self, index: usize) -> Option<&str> {
         match &self.value {
-            Some(Value::Array(elems)) => match elems.get(index) {
-                Some(elem) => elem.as_str(),
-                _ => "",
-            },
-            _ => "",
+            Some(Value::Array(elems)) => elems.get(index).map(|elem| elem.as_str()),
+            _ => None,
         }
     }
 
