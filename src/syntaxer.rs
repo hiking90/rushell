@@ -415,44 +415,6 @@ impl syntaxer::Syntaxer for Syntaxer {
             res += &buf[pos..];
         }
 
-        // let mut copied = pos;
-
-        // for word in input.words() {
-        //     let mut start = word.start;
-
-        //     if start > pos || (start <= pos && pos < word.end) {
-        //         if start <= pos {
-        //             start = pos;
-        //         }
-        //         if start > copied {
-        //             res += &buf[copied .. start];
-        //         }
-
-        //         let style = if let input::Quoted::True(_) = word.quoted {
-        //             self.theme.quoted
-        //         } else {
-        //             match word.kind {
-        //                 input::Kind::Command => self.theme.command,
-        //                 input::Kind::Argument => self.theme.argument,
-        //                 input::Kind::ValidPath => self.theme.valid_path,
-        //                 _ => self.theme.normal,
-        //             }
-        //         };
-
-        //         res += &format!("\x01{}\x02{}\x01{}\x02",
-        //             style.prefix(),
-        //             &buf[start..word.end],
-        //             style.suffix(),
-        //         );
-
-        //         copied = word.end;
-        //     }
-        // }
-
-        // if copied < buf.len() {
-        //     res += &buf[copied..];
-        // }
-
         if res.is_empty() {
             None
         } else {

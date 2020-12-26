@@ -1,6 +1,6 @@
 use crate::shell;
 use crate::eval::*;
-use crate::parser::{ExpansionOp, ProcSubstType, Span, Word, Expr};
+use crate::parser::{ExpansionOp, ProcSubstType, Span, Word};
 use crate::pattern::{PatternWord};
 use crate::shell::Shell;
 use crate::variable::Value;
@@ -275,6 +275,9 @@ fn expand_param(
         ExpansionOp::Subst { .. } => Ok(vec!["".to_owned()]),
     }
 }
+
+#[cfg(test)]
+use crate::parser::Expr;
 
 #[test]
 fn test_expand_param() -> Result<()> {
