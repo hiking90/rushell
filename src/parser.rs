@@ -374,7 +374,7 @@ pub fn reserved_word<'a>() -> Parser<'a, char, ()> {
     | tag("then")
     | tag("while")
     | tag("[[")
-    ).discard()
+    ) * one_of(" \t\r\n").discard()
 }
 
 enum WordType {
@@ -518,7 +518,6 @@ fn literal_span<'a>(dynot: &'static str) -> Parser<'a, char, Vec<Span>> {
         }
 
         if literal.len() > 0 {
-            // println!("Literal [{}]", literal);
             spans.push(Span::Literal(literal));
         }
 
@@ -605,7 +604,6 @@ fn word<'a>(word_type: WordType) -> Parser<'a, char, Word> {
         | literal_span(not_set)
     ).repeat(1..)
     .map(|spans| {
-        // println!("word {:?}", spans);
         Word(spans.into_iter().flatten().collect())
     })
     .name("word")
@@ -1853,7 +1851,7 @@ pub fn error_convert(code: &[char], err: pom::Error) -> ParseError {
         pom::Error::Incomplete => ("Incomplete".to_string(), code.len()),
     };
 
-    let message = format!("{}\n  |\n  | {}\n  | {}^---\n  |",
+    let message = format!("{}\n  |\n  | {}  | {}^---\n  |",
         message, String::from_iter(code), " ".repeat(position)
     );
 
@@ -2058,6 +2056,25 @@ macro_rules! param {
 #[test]
 fn test_extra() {
     let parser = ShellParser::new();
+
+    assert_eq!(
+        parser.parse("fish"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "fish".to_string(),
+                background: false ,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        external: false,
+                        argv: literal_word_vec!["fish"],
+                        redirects: vec![],
+                        assignments: vec![]
+                    }]
+                }],
+            }
+        ]})
+    );
 
     assert_eq!(
         parser.parse(

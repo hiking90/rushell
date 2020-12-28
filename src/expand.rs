@@ -1,4 +1,3 @@
-use crate::shell;
 use crate::eval::*;
 use crate::parser::{ExpansionOp, ProcSubstType, Span, Word};
 use crate::pattern::{PatternWord};
@@ -278,6 +277,8 @@ fn expand_param(
 
 #[cfg(test)]
 use crate::parser::Expr;
+#[cfg(test)]
+use crate::shell;
 
 #[test]
 fn test_expand_param() -> Result<()> {

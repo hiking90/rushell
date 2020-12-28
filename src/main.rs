@@ -34,6 +34,7 @@ mod git;
 mod prompt;
 mod completion;
 mod input;
+mod input_parser;
 mod glob;
 mod syntaxer;
 #[cfg(test)]

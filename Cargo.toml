@@ -26,8 +26,8 @@ phf = { version = "0", features = ["macros"] }
 lazy_static = "1"
 whoami = "0"
 chrono = "0.4"
-pom = { path = "../pom", version = "3"}
-# pom = { version = "3", git = "https://github.com/hiking90/pom" }
+# pom = { path = "../pom", version = "3"}
+pom = { version = "3", git = "https://github.com/hiking90/pom" }
 
 [dependencies.regex]
 version = "1"
