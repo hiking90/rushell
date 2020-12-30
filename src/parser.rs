@@ -1,4 +1,3 @@
-use core::any::Any;
 use pom::parser::*;
 
 use std::sync::Arc;
@@ -326,7 +325,7 @@ pub fn space<'a>() -> Parser<'a, char, ()> {
 
 fn newline_list<'a>() -> Parser<'a, char, ()> {
     let comment = sym('#') * none_of("\n").repeat(0..);
-    (space() * comment.opt() * sym('\n') * empty().pos()).repeat(1..)
+    (space() * comment.opt() * sym('\n')).repeat(1..)
     .discard()
     .name("newline_list")
 }
@@ -783,14 +782,8 @@ fn cmd_suffix<'a>() -> Parser<'a, char, (Vec<Word>, Vec<Redirection>)> {
 
 fn expr<'a>() -> Parser<'a, char, Box<Expr>> {
     Parser::new(move |input: Arc<dyn Input<char>>, start: usize| {
-        match input.as_any().downcast_ref::<ProgramInput>() {
-            Some(program_input) => {
-                (program_input.expr.method)(input.clone(), start)
-            }
-            None => Err(pom::Error::Incomplete),
-        }
+        (EXPR.method)(input.clone(), start)
     })
-    // call(_expr)
 }
 
 // expr = !{ assign ~ (comp_op ~ expr)? }
@@ -915,14 +908,8 @@ fn primary<'a>() -> Parser<'a, char, Box<Expr>> {
 
 fn param_ex_span<'a>() -> Parser<'a, char, Span> {
     Parser::new(move |input: Arc<dyn Input<char>>, start: usize| {
-        match input.as_any().downcast_ref::<ProgramInput>() {
-            Some(program_input) => {
-                (program_input.param_ex_span.method)(input.clone(), start)
-            }
-            None => Err(pom::Error::Incomplete),
-        }
+        (PARAM_EX_SPAN.method)(input.clone(), start)
     })
-    // call(_param_ex_span)
 }
 
 // param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ index ~ param_opt? ~ "}" }
@@ -1112,12 +1099,7 @@ fn initializer<'a>() -> Parser<'a, char, Initializer> {
 
 fn compound_list<'a>() -> Parser<'a, char, Vec<Term>> {
     Parser::new(move |input: Arc<dyn Input<char>>, start: usize| {
-        match input.as_any().downcast_ref::<ProgramInput>() {
-            Some(program_input) => {
-                (program_input.compound_list.method)(input.clone(), start)
-            }
-            None => Err(pom::Error::Incomplete),
-        }
+        (COMPOUND_LIST.method)(input.clone(), start)
     })
 }
 
@@ -1816,29 +1798,11 @@ fn heredoc_line<'a>(trim: bool) -> Parser<'a, char, (Word, usize)> {
     })
 }
 
-pub struct ProgramInput {
-    pub input: Vec<char>,
-    pub compound_list: Arc<Parser<'static, char, Vec<Term>>>,
-    pub expr: Arc<Parser<'static, char, Box<Expr>>>,
-    pub param_ex_span: Arc<Parser<'static, char, Span>>,
-}
-
-impl Input<char> for ProgramInput {
-    fn get(&self, index: usize) -> Option<&char> {
-        self.input.get(index)
-    }
-
-    fn get_vec(&self, index: std::ops::Range<usize>) -> Option<Vec<char>> {
-        Some(self.input.get(index)?.to_vec())
-    }
-
-    fn len(&self) -> usize {
-        self.input.len()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+lazy_static! {
+    pub static ref PROGRAM: Parser<'static, char, Vec<Term>> = complete_commands();
+    pub static ref COMPOUND_LIST: Parser<'static, char, Vec<Term>> = _compound_list();
+    pub static ref EXPR: Parser<'static, char, Box<Expr>> = _expr();
+    pub static ref PARAM_EX_SPAN: Parser<'static, char, Span> = _param_ex_span();
 }
 
 pub fn error_convert(code: &[char], err: pom::Error) -> ParseError {
@@ -1867,19 +1831,11 @@ pub fn error_convert(code: &[char], err: pom::Error) -> ParseError {
 
 
 pub struct ShellParser {
-    program: Parser<'static, char, Vec<Term>>,
-    compound_list: Arc<Parser<'static, char, Vec<Term>>>,
-    expr: Arc<Parser<'static, char, Box<Expr>>>,
-    param_ex_span: Arc<Parser<'static, char, Span>>,
 }
 
 impl ShellParser {
     pub fn new() -> ShellParser {
         ShellParser {
-            program: complete_commands(),
-            compound_list: Arc::new(_compound_list()),
-            expr: Arc::new(_expr()),
-            param_ex_span: Arc::new(_param_ex_span()),
         }
     }
 
@@ -1948,11 +1904,8 @@ impl ShellParser {
 
             last_pos = end_pos;
 
-            let mut res = self.program.parse(Arc::new(ProgramInput {
+            let mut res = PROGRAM.parse(Arc::new(InputV {
                 input: input[parse_pos .. end_pos].to_vec(),
-                compound_list: self.compound_list.clone(),
-                expr: self.expr.clone(),
-                param_ex_span: self.param_ex_span.clone(),
             }));
 
             // if let Ok(ref mut cmds) = res {
@@ -1969,13 +1922,9 @@ impl ShellParser {
                                 let line_parser = if *quoted { heredoc_line_quoted(*trim) } else { heredoc_line(*trim) };
 
                                 loop {
-                                    let res = line_parser
-                                        .parse(Arc::new(ProgramInput {
-                                            input: input[line_start..].to_vec(),
-                                            compound_list: self.compound_list.clone(),
-                                            expr: self.expr.clone(),
-                                            param_ex_span: self.param_ex_span.clone(),
-                                        }));
+                                    let res = line_parser.parse(Arc::new(InputV {
+                                        input: input[line_start..].to_vec(),
+                                    }));
 
                                     match res {
                                         Ok((word, line_end)) => {

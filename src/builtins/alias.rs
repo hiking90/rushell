@@ -23,10 +23,13 @@ fn name<'a>() -> Parser<'a, char, String> {
 }
 
 fn body<'a>() -> Parser<'a, char, String> {
-    (
-        (sym('\"') * none_of("\"").repeat(1..) - sym('\"'))
-        | none_of(" \t\r\n").repeat(1..)
-    ).map(String::from_iter)
+    any().repeat(1..)
+    .map(String::from_iter)
+
+    // (
+    //     (sym('\"') * none_of("\"").repeat(1..) - sym('\"'))
+    //     | none_of(" \t\r\n").repeat(1..)
+    // ).map(String::from_iter)
 }
 
 fn parse<'a>() -> Parser<'a, char, Alias> {
@@ -46,11 +49,23 @@ fn parse_alias(alias: &str) -> Result<Alias, parser::ParseError> {
         .map_err(|err| parser::error_convert(&chars.to_vec(), err))
 }
 
+#[test]
+fn test_parse_alias() {
+    assert_eq!(
+        parse_alias("ls=ls -Gp"),
+        Ok(Alias {
+            name: "ls".to_string(),
+            body: "ls -Gp".to_string(),
+        })
+    );
+}
+
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("alias: argv={:?}", ctx.argv);
     if let Some(alias) = ctx.argv.get(1) {
         match parse_alias(alias) {
             Ok(Alias { name, body }) => {
+                // println!("alias debug - {:?} => {:?} {:?}", alias, name, body);
                 ctx.shell.add_alias(&name, body);
                 ExitStatus::ExitedWith(0)
             }

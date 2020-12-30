@@ -9,7 +9,7 @@ pub enum Type {
     Assignment,
     Redirect,
     Literal,
-    Path,
+    // Path,
     Keyword,
     Symbol,
     Variable,
@@ -47,9 +47,8 @@ impl Item {
 
 fn newline_list<'a>() -> Parser<'a, char, ()> {
     let comment = sym('#') * none_of("\n").repeat(0..);
-    (space() * comment.opt() * sym('\n') * empty().pos()).repeat(1..)
+    (space() * comment.opt() * sym('\n')).repeat(1..)
     .discard()
-    .name("newline_list")
 }
 
 fn linebreak<'a>() -> Parser<'a, char, ()> {
@@ -78,8 +77,15 @@ fn expr_span<'a>() -> Parser<'a, char, Vec<Item>> {
 }
 
 fn backtick_span<'a>() -> Parser<'a, char, Vec<Item>> {
-    (sym_range('`') - (!tag("\\`") * none_of("`")).repeat(0..) + sym_range('`').expect("`"))
-    .map(|(s1, s2)| vec![s1, s2])
+    // (sym_range('`') - (!tag("\\`") * none_of("`")).repeat(0..) + sym_range('`').expect("`"))
+    (sym_range('`') + compound_list() + sym_range('`'))
+    .map(|((s1, mut items), s2)| {
+        let mut res = vec![s1];
+        res.append(&mut items);
+        res.push(s2);
+
+        res
+    })
 }
 
 fn command_span<'a>() -> Parser<'a, char, Vec<Item>> {
@@ -385,11 +391,42 @@ fn list<'a>() -> Parser<'a, char, Vec<Item>> {
     })
 }
 
+fn compound_list<'a>() -> Parser<'a, char, Vec<Item>> {
+    call(_compound_list)
+}
+
+fn _compound_list<'a>() -> Parser<'a, char, Vec<Item>> {
+    (linebreak() * term() + separator().opt())
+    .map(|(mut items, bg)| {
+        bg.map(|bg| items.push(bg));
+
+        items
+    })
+}
+
+fn term<'a>() -> Parser<'a, char, Vec<Item>> {
+    let others = separator() + and_or();
+    (and_or() + others.repeat(0..)).map(|(mut items, others)|
+    {
+        others.into_iter().for_each(|(bg, mut and_or)| {
+            items.push(bg);
+            items.append(&mut and_or);
+        });
+        items
+    })
+}
+
 fn separator_op<'a>() -> Parser<'a, char, Item> {
     ((!tag(";;") * sym(';')).map(|_| false) | (!tag("&&") * sym('&')).map(|_| true)).range()
     .map(|r| Item::new(r.0, r.1, Type::Symbol))
     - space()
 }
+
+fn separator<'a>() -> Parser<'a, char, Item> {
+    (separator_op() - linebreak())
+    | newline_list().range().map(|r| Item::new(r.0, r.1, Type::Symbol))
+}
+
 
 fn complete_command<'a>() -> Parser<'a, char, Vec<Item>> {
     (list() + separator_op().opt())

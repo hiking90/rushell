@@ -334,7 +334,7 @@ impl<Term: Terminal> Completer<Term> for ShellCompleter {
 
         let mut input = input::Input::from(reader.buffer());
 
-        input.parse(_end);
+        input.parse_with_cursor(_end);
         if input.words().len() == 0 {
             return None;
         }

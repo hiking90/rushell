@@ -1,117 +1,29 @@
-const SPACES: &str = " \t\n";
-const QUOTE_CHARS: &str = "\"'`";
-pub const ESCAPED_CHARS: &str = "\"`$\\";
-// const PART_BREAK_CHARS: &str = "@$><=;|&{(/";
+use std::sync::Arc;
+use pom::parser::*;
 
-#[derive(Debug, Clone)]
-pub enum Kind {
-    Unknown,
-    Command,
-    Symbol,
-    Argument,
-    ValidPath,
-}
-
-#[derive(Debug, Clone)]
-pub enum Quoted {
-    False,
-    True(char),
-    Progress(char),
-}
+use crate::input_parser::*;
 
 #[derive(Debug, Clone)]
 pub struct Word {
     pub start: usize,
     pub end: usize,
-    pub kind: Kind,
-    pub quoted: Quoted,
+    pub kind: Type,
     pub escaped_word: String,
-    escaped: bool,
 }
 
 impl Word {
-    fn new() -> Word {
+    fn new_from_item(item: &Item, escaped: String) -> Word {
         Word {
-            start: 0,
-            end: 0,
-            kind: Kind::Unknown,
-            quoted: Quoted::False,
-            escaped: false,
-            escaped_word: String::new(),
+            start: item.begin,
+            end: item.end,
+            kind: item.type_of.clone(),
+            escaped_word: escaped,
         }
     }
 
-    fn is_empty(&self) -> bool {
-        self.start == self.end
-    }
-
-    // pub fn is_progress(&self) -> bool {
-    //     match self.quoted {
-    //         Quoted::Progress(_) => true,
-    //         _ => self.escaped,
-    //     }
+    // fn is_empty(&self) -> bool {
+    //     self.start == self.end
     // }
-
-    fn push(&mut self, idx: usize, ch: char) -> bool {
-        if self.escaped == true {
-            self.escaped = false;
-            if ESCAPED_CHARS.contains(ch) == false {
-                self.escaped_word.push('\\');
-            }
-            self.escaped_word.push(ch);
-        } else if ch == '\\' {
-            self.escaped = true;
-        } else {
-            if QUOTE_CHARS.contains(ch) {
-                match self.quoted {
-                    Quoted::False => {
-                        if self.is_empty() == false {
-                            return true;
-                        }
-                        self.quoted = Quoted::Progress(ch);
-                    }
-                    Quoted::Progress(qch) => {
-                        if qch == ch {
-                            self.quoted = Quoted::True(ch);
-                            self.end = idx + ch.len_utf8();
-                            return true;
-                        } else {
-                            self.escaped_word.push(ch);
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            } else if SPACES.contains(ch) == true {
-                match self.quoted {
-                    Quoted::False => {
-                        return self.is_empty() == false;
-                    }
-                    Quoted::Progress(_) => self.escaped_word.push(ch),
-                    _ => unreachable!(),
-                }
-            } else if ESCAPED_CHARS.contains(ch) == true {
-                match self.quoted {
-                    Quoted::False => {
-                        self.kind = Kind::Symbol;
-                        self.escaped_word.push(ch);
-                        self.end = idx + ch.len_utf8();
-                        return true;
-                    }
-                    Quoted::Progress(_) => self.escaped_word.push(ch),
-                    _ => unreachable!(),
-                }
-            } else {
-                self.escaped_word.push(ch);
-            }
-        }
-
-        if self.is_empty() {
-            self.start = idx;
-        }
-        self.end = idx + ch.len_utf8();
-
-        false
-    }
 }
 
 pub struct Input<'a> {
@@ -127,60 +39,69 @@ impl<'a> Input<'a> {
         }
     }
 
-    fn parse_words(&mut self) {
-        let mut word = Word::new();
+    fn parse_escaped_word(&self, input: &[char]) -> String {
+        let mut escaped = String::new();
+        let mut iter = input.iter();
 
-        for (idx, ch) in self.line.char_indices() {
-            if word.push(idx, ch) == true {
-                if word.is_empty() == false {
-                    let word_end = word.end;
-                    self.words.push(word);
-                    word = Word::new();
-                    if word_end == idx {
-                        word.push(idx, ch);
+        while let Some(ch) = iter.next() {
+            match ch {
+                '\\' => {
+                    if let Some(ch) = iter.next() {
+                        escaped.push(*ch);
                     }
+                }
+                _ => {
+                    escaped.push(*ch);
                 }
             }
         }
 
-        if word.is_empty() == false {
-            self.words.push(word);
-        }
+        escaped
     }
 
-    pub fn parse(&mut self, cursor: usize) {
-        self.parse_words();
+    fn traverse_simple_command(&self, item: &Item, cursor: usize, input: &Vec<char>) -> Vec<Word> {
+        let mut res_words = vec![];
 
-        let mut found = false;
-        let mut start: usize = 0;
-        let mut end: usize = 0;
-
-        for i in 0 .. self.words.len() {
-            if start == end {
-                start = i;
-                self.words[i].kind = Kind::Command;
-            } else {
-                self.words[i].kind = Kind::Argument;
-            }
-            end = i + 1;
-
-            let word = &self.words[i];
-
-            if word.start <= cursor && cursor <= word.end {
-                found = true;
-            }
-
-            if let Quoted::False = word.quoted {
-                if word.escaped_word.ends_with(&['&', '|', ';'][..]) {
-                    if found == true {
-                        break;
-                    } else {
-                        start = end;
+        if item.type_of == Type::SimpleCommand && item.begin <= cursor && cursor <= item.end {
+            for item in &item.children {
+                // println!("{:?}", item);
+                match item.type_of {
+                    Type::Command | Type::Argument => {
+                        let mut children_words = vec![];
+                        for item in &item.children {
+                            let mut words = self.traverse_simple_command(&item, cursor, input);
+                            children_words.append(&mut words);
+                        }
+                        if children_words.len() == 0 {
+                            res_words.push(Word::new_from_item(&item, self.parse_escaped_word(&input[item.begin..item.end])))
+                        } else {
+                            res_words.append(&mut children_words);
+                        }
                     }
+                    _ => {}
                 }
             }
         }
-        self.words = self.words[start .. end].to_vec();
+
+        res_words
+    }
+
+    pub fn parse_with_cursor(&mut self, cursor: usize) {
+        let input: Vec<char> = self.line.chars().collect();
+        match PARSER.parse(Arc::new(InputV { input: input.clone() })) {
+            Err(_) => {
+                return;
+            }
+
+            Ok(items) => {
+                for item in items {
+                    let mut words = self.traverse_simple_command(&item, cursor, &input);
+
+                    self.words.append(&mut words);
+                }
+            }
+        }
+
     }
 
     pub fn words(&self) -> &Vec<Word> {
@@ -199,28 +120,52 @@ impl<'a> Input<'a> {
 
 #[test]
 pub fn test_split_words() {
+    let mut input = Input::from("l");
+    let mut words = Vec::new();
+
+    input.parse_with_cursor(1);
+    input.words().iter().for_each(|w| words.push(w.escaped_word.as_str()));
+
+    assert_eq!(words, ["l"]);
+
     let mut input = Input::from("\\ls -al   \"hello \'king\' \\\" world\" tail");
     let mut words = Vec::new();
 
-    input.parse(4);
+    input.parse_with_cursor(4);
     input.words().iter().for_each(|w| words.push(w.escaped_word.as_str()));
 
-    assert_eq!(words, vec!["\\ls", "-al", "hello \'king\' \" world", "tail"]);
+    assert_eq!(words, vec!["ls", "-al", "\"hello \'king\' \" world\"", "tail"]);
     // assert_eq!(input.cursor_to_index(4), 1);
 
     let mut input = Input::from("ls & cat ; less | function");
     let mut words = Vec::new();
 
-    input.parse(5);
+    input.parse_with_cursor(5);
     input.words().iter().for_each(|w| words.push(w.escaped_word.as_str()));
 
-    assert_eq!(words, vec!["cat", ";"]);
+    assert_eq!(words, vec!["cat"]);
 
-    let mut input = Input::from("ls`cat`less\"function\"");
+    let mut input = Input::from("`ls`");
     let mut words = Vec::new();
 
-    input.parse(5);
+    input.parse_with_cursor(1);
     input.words().iter().for_each(|w| words.push(w.escaped_word.as_str()));
 
-    assert_eq!(words, vec!["ls", "cat", "less", "function"]);
+    assert_eq!(words, vec!["ls"]);
+
+    // test unicode
+    let mut input = Input::from("`우리나라`");
+    let mut words = Vec::new();
+
+    input.parse_with_cursor(1);
+    input.words().iter().for_each(|w| words.push(w.escaped_word.as_str()));
+
+    assert_eq!(words, vec!["우리나라"]);
+    // let mut input = Input::from("ls`cat`less\"function\"");
+    // let mut words = Vec::new();
+
+    // input.parse_with_cursor(5);
+    // input.words().iter().for_each(|w| words.push(w.escaped_word.as_str()));
+
+    // assert_eq!(words, vec!["ls", "cat", "less", "function"]);
 }

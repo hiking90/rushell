@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use linefeed::syntaxer;
 use pom::parser::*;
+use std::iter::FromIterator;
 
 use crate::theme;
 use crate::input_parser::*;
@@ -18,11 +19,6 @@ impl Syntaxer {
         }
     }
 
-    fn parse(&self, buf: &str) -> Result<Vec<Item>, pom::Error> {
-        let input: Vec<char> = buf.chars().collect();
-        PARSER.parse(Arc::new(InputV { input: input }))
-    }
-
     // fn traverse_children<'a>(&self, item: &'a Item, pos: usize) -> &'a Item {
     //     for child in &item.children {
     //         if child.begin <= pos && pos < child.end {
@@ -36,7 +32,8 @@ impl Syntaxer {
 
 impl syntaxer::Syntaxer for Syntaxer {
     fn highlight(&self, buf: &str, pos: usize) -> Option<(String, usize)> {
-        let items = self.parse(buf).ok()?;
+        let buf: Vec<char> = buf.chars().collect();
+        let items = PARSER.parse(Arc::new(InputV { input: buf.clone() })).ok()?;
 
         // println!("{:?}", items);
 
@@ -49,7 +46,7 @@ impl syntaxer::Syntaxer for Syntaxer {
 
         for item in items {
             if item.begin > pos {
-                res += &buf[pos .. item.begin];
+                res += &String::from_iter(&buf[pos .. item.begin]);
                 pos = item.begin;
             } else if item.begin < pos {
                 pos = item.begin;
@@ -62,7 +59,7 @@ impl syntaxer::Syntaxer for Syntaxer {
                 let style = match item.type_of {
                     Type::Command => self.theme.command,
                     Type::Argument => self.theme.argument,
-                    Type::Path => self.theme.valid_path,
+                    // Type::Path => self.theme.valid_path,
                     Type::Literal |
                     Type::Assignment |
                     Type::Redirect |
@@ -79,7 +76,7 @@ impl syntaxer::Syntaxer for Syntaxer {
 
                 res += &format!("\x01{}\x02{}\x01{}\x02",
                     style.prefix(),
-                    &buf[pos..item.end],
+                    &String::from_iter(&buf[pos..item.end]),
                     style.suffix(),
                 );
 
@@ -88,7 +85,7 @@ impl syntaxer::Syntaxer for Syntaxer {
         }
 
         if pos < buf.len() {
-            res += &buf[pos..];
+            res += &String::from_iter(&buf[pos..]);
         }
 
         if res.is_empty() {
@@ -99,12 +96,17 @@ impl syntaxer::Syntaxer for Syntaxer {
     }
 }
 
+#[cfg(test)]
+fn parse(buf: &str) -> Result<Vec<Item>, pom::Error> {
+    let buf: Vec<char> = buf.chars().collect();
+    PARSER.parse(Arc::new(InputV { input: buf.clone() }))
+}
+
+
 #[test]
 fn test_syntax_parser() {
-    let parser = Syntaxer::new();
-
     assert_eq!(
-        parser.parse("AA=abcd"),
+        parse("AA=abcd"),
         Ok(vec![
             Item::new_with_children(Type::Assignment, vec![
                 Item::new(0, 2, Type::Variable),
@@ -115,7 +117,7 @@ fn test_syntax_parser() {
     );
 
     assert_eq!(
-        parser.parse("AA=\"hello world\""),
+        parse("AA=\"hello world\""),
         Ok(vec![
             Item::new_with_children(Type::Assignment, vec![
                 Item::new(0, 2, Type::Variable),
@@ -130,7 +132,7 @@ fn test_syntax_parser() {
     );
 
     assert_eq!(
-        parser.parse("ls -al && echo A"),
+        parse("ls -al && echo A"),
         Ok(vec![
             Item::new_with_children(Type::SimpleCommand, vec![
                 Item::new(0, 2, Type::Command),
