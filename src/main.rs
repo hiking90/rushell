@@ -79,12 +79,20 @@ fn main() -> io::Result<()> {
     let mutex_shell = Arc::new(Mutex::new(shell::Shell::new()));
     // let mut shell = shell::Shell::new(command_scanner.clone());
 
-    let mut iter = std::env::args();
-
-    iter.next();    // Skip command name.
-
     if let Ok(mut shell) = mutex_shell.lock() {
+        let args: Vec<String> = std::env::args().collect();
+
+        shell.set_script_name(&args[0]);
+
+        let frame = shell.current_frame_mut();
+        if args.len() > 1 {
+            frame.set_args(&args[1..]);
+        }
+
         shell.scan_commands();
+
+        let mut iter = std::env::args();
+        iter.next();        // Skip command name.
         while let Some(arg) = iter.next() {
             match arg.as_str() {
                 "-c" => {

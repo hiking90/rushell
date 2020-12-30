@@ -151,6 +151,15 @@ fn expand_param(
         "0" => {
             return Ok(vec![shell.script_name.clone()]);
         }
+        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+            let value = shell.current_frame().get(name).map_or("".to_string(), |arg| {
+                match arg.value() {
+                    Some(Value::String(value)) => value.to_string(),
+                    _ => "".to_string()
+                }
+            });
+            return Ok(vec![value]);
+        }
         "$" => {
             return Ok(vec![shell.shell_pgid.to_string()]);
         }
