@@ -655,6 +655,19 @@ fn io_file<'a>() -> Parser<'a, char, Vec<Redirection>> {
         }]
     }) |
 
+    io_file_op("&>").map(|name| {
+        vec![Redirection {
+            fd: 1,
+            direction: RedirectionDirection::Output,
+            target: RedirectionType::FileOrFd(name),
+        },
+        Redirection {
+            fd: 2,
+            direction: RedirectionDirection::Output,
+            target: RedirectionType::Fd(1),
+        }]
+    }) |
+
     io_file_op(">>").map(|name| {
         vec![Redirection {
             fd: 1,
@@ -3301,6 +3314,42 @@ pub fn test_compound_commands() {
             }],
         })
     );
+}
+
+#[test]
+pub fn test_redirections() {
+    let parser = ShellParser::new();
+
+    assert_eq!(
+        parser.parse("ls &> /dev/null\n"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "ls &> /dev/null".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        external: false,
+                        argv: literal_word_vec!["ls"],
+                        redirects: vec![
+                            Redirection {
+                                fd: 1,
+                                direction:  RedirectionDirection::Output,
+                                target: RedirectionType::FileOrFd(Word(vec![Span::Literal("/dev/null".to_string())]))
+                            },
+                            Redirection {
+                                fd: 2,
+                                direction: RedirectionDirection::Output,
+                                target: RedirectionType::Fd(1)
+                            }
+                        ],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        })
+    );
+
 }
 
 #[test]
