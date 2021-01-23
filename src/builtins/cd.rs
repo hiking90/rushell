@@ -6,15 +6,20 @@ use std::path::PathBuf;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("cd: argv={:?}", ctx.argv);
-    let old_dir = std::env::current_dir().expect("failed to getcwd()");
-    let dir = match ctx.argv.get(1) {
+    let old_dir = utils::current_working_dir();
+    let (dir, push) = match ctx.argv.get(1) {
         Some(dir) => {
             if dir.starts_with('/') {
                 // absolute path
-                PathBuf::from(dir)
+                (PathBuf::from(dir), true)
+            } else if dir == "-" {
+                match ctx.shell.popd() {
+                    Some(dir) => (dir, false),
+                    None => return ExitStatus::ExitedWith(0),
+                }
             } else {
                 // relative path
-                PathBuf::from(&old_dir).join(dir)
+                (PathBuf::from(&old_dir).join(dir), true)
                 // Path::new(&old_dir)
                 //     .join(dir.clone())
                 //     .to_string_lossy()
@@ -23,12 +28,14 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         }
         None => {
             // called with no arguments; defaults to the home directory
-            utils::home_dir()
+            (utils::home_dir(), true)
         }
     };
 
     // TODO: make this configurable
-    ctx.shell.pushd(old_dir);
+    if push == true {
+        ctx.shell.pushd(old_dir);
+    }
 
     match ctx.shell.set_current_dir(Some(dir.clone())) {
         Ok(_) => {
