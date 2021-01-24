@@ -11,8 +11,6 @@ extern crate log;
 extern crate structopt;
 extern crate whoami;
 extern crate regex;
-#[macro_use]
-extern crate quick_error;
 
 // #[cfg(test)]
 // extern crate test;

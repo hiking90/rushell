@@ -3,6 +3,7 @@ use crate::shell::Shell;
 use crate::utils::FdFile;
 use phf::phf_map;
 use std::io::Write;
+use err_derive::Error;
 
 mod alias;
 mod bg;
@@ -32,16 +33,12 @@ pub struct InternalCommandContext<'a> {
     pub stderr: FdFile,
 }
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum InternalCommandError {
-        NotFound {
-            display("command not found")
-        }
-        BadRedirection {
-            display("failed to create redirections")
-        }
-    }
+#[derive(Debug, Error)]
+pub enum InternalCommandError {
+    #[error(display = "command not found")]
+    NotFound,
+    #[error(display = "failed to create redirections")]
+    BadRedirection,
 }
 
 // #[derive(Debug, Fail)]

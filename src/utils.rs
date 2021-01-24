@@ -4,16 +4,12 @@ use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::env;
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        Message(msg: String) {
-            from()
-        }
-        NoMatchesError {
-            display("no matches")
-        }
-    }
+use err_derive::Error;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error(display = "Error message: {:?}", _0)]
+    Message(String),
 }
 
 use std::error;

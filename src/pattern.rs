@@ -1,12 +1,11 @@
 use regex::Regex;
 use crate::glob;
 use crate::utils::Result;
+use err_derive::Error;
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum NoMatchesError {
-    }
-}
+#[derive(Debug, Error)]
+#[error(display = "No matches error")]
+pub struct NoMatchesError;
 
 /// A word which includes patterns. We don't expand words
 /// into the `Vec<String>` directly since the patterns has

@@ -27,7 +27,7 @@ whoami = "0"
 chrono = "0.4"
 # pom = { path = "../pom", version = "3"}
 pom = { version = "3", git = "https://github.com/hiking90/pom" }
-quick-error = "2"
+err-derive = "0"
 
 [dependencies.regex]
 version = "1"
