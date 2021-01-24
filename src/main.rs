@@ -232,10 +232,23 @@ fn main() -> io::Result<()> {
             process::check_background_jobs(&mut shell);
             match readline {
                 ReadResult::Input(line) => {
+                    let trimed = line.trim().to_string();
+
+                    let line = if trimed.starts_with("!") == true {
+                        if let Some(cmd) = shell.history_starts_with(&trimed[1..]) {
+                            cmd
+                        } else {
+                            print_err!("Can't find \'{}\'", trimed);
+                            multiline = String::new();
+                            continue
+                        }
+                    } else {
+                        line
+                    };
+
                     multiline.push_str(&line);
                     multiline.push('\n');
 
-                    let trimed = line.trim();
                     if trimed.ends_with("\\") == false {
                         match shell.run_str(&multiline) {
                             process::ExitStatus::Expected => {},

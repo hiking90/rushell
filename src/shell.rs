@@ -530,4 +530,18 @@ impl Shell {
             write!(linefeed, "\x1b]0;{}\x07", title).ok();
         }
     }
+
+    pub fn history_starts_with(&self, cmd: &str) -> Option<String> {
+        if let Some(linefeed) = &self.linefeed {
+            if let Ok(writer) = linefeed.lock_writer_erase() {
+                for history in writer.history().rev() {
+                    if history.starts_with(cmd) {
+                        return Some(history.to_owned());
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
