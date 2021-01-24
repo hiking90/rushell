@@ -3,7 +3,7 @@ use crate::{shell};
 pub enum ArgOption {
     WordList(String),
     Function(String),
-    Action(String),
+    // Action(String),
     Word(String),
 }
 

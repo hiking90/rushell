@@ -60,7 +60,7 @@ pub fn compgen(ctx: &mut InternalCommandContext) -> ExitStatus {
                     writeln!(ctx.stdout, "{}", w).ok();
                 });
             }
-            _ => unreachable!(),
+            // _ => unreachable!(),
         });
 
         ExitStatus::ExitedWith(0)
