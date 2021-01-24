@@ -4,8 +4,22 @@ use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::env;
 
-pub const SHELL_NAME: &'static str = "rushell";
+quick_error! {
+    #[derive(Debug)]
+    pub enum Error {
+        Message(msg: String) {
+            from()
+        }
+        NoMatchesError {
+            display("no matches")
+        }
+    }
+}
 
+use std::error;
+pub type Result<I> = std::result::Result<I, Box<dyn error::Error>>;
+
+pub const SHELL_NAME: &'static str = "rushell";
 
 /// `File`-like object but does not close the `fd`.
 pub struct FdFile {

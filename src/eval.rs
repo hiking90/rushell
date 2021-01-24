@@ -8,7 +8,7 @@ use crate::pattern::{match_pattern_all, NoMatchesError};
 use crate::process::*;
 use crate::shell::Shell;
 use crate::variable::Value;
-use failure::Error;
+use crate::utils::{Error, Result};
 use nix;
 use nix::unistd::{close, fork, pipe, setpgid, ForkResult, Pid};
 use regex::Regex;
@@ -17,8 +17,6 @@ use std::path::PathBuf;
 use std::io::prelude::*;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
-
-type Result<I> = std::result::Result<I, Error>;
 
 macro_rules! bool_to_int {
     ($e:expr) => {
@@ -250,7 +248,8 @@ fn run_simple_command(
         match result {
             Ok(status) => return Ok(status),
             Err(err) => {
-                match err.find_root_cause().downcast_ref::<InternalCommandError>() {
+                // match err.find_root_cause().downcast_ref::<InternalCommandError>() {
+                match err.downcast_ref::<InternalCommandError>() {
                     Some(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
                     Some(InternalCommandError::NotFound) => (), /* Try external command. */
                     _ => return Err(err),
@@ -716,7 +715,6 @@ fn run_pipeline(
             // }
             Err(err) => {
                 if err
-                    .find_root_cause()
                     .downcast_ref::<NoMatchesError>()
                     .is_some()
                 {
@@ -843,7 +841,7 @@ pub fn run_terms(
 pub fn evaluate_cond_primary(shell: &mut Shell, cond: &CondExpr) -> Result<String> {
     match cond {
         CondExpr::Word(word) => expand_word_into_string(shell, word),
-        _ => Err(format_err!("cond: expected word")),
+        _ => Err(Error::Message(format!("cond: expected word")).into()),
     }
 }
 
@@ -860,7 +858,7 @@ pub fn evaluate_cond(shell: &mut Shell, cond: &CondExpr) -> Result<bool> {
             match $expr {
                 CondExpr::Word(word) => word,
                 _ => {
-                    return Err(format_err!("cond: expected word"));
+                    return Err(Error::Message(format!("cond: expected word")).into());
                 }
             }
         };

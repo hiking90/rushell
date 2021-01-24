@@ -32,13 +32,25 @@ pub struct InternalCommandContext<'a> {
     pub stderr: FdFile,
 }
 
-#[derive(Debug, Fail)]
-pub enum InternalCommandError {
-    #[fail(display = "command not found")]
-    NotFound,
-    #[fail(display = "failed to create redirections")]
-    BadRedirection,
+quick_error! {
+    #[derive(Debug)]
+    pub enum InternalCommandError {
+        NotFound {
+            display("command not found")
+        }
+        BadRedirection {
+            display("failed to create redirections")
+        }
+    }
 }
+
+// #[derive(Debug, Fail)]
+// pub enum InternalCommandError {
+//     #[fail(display = "command not found")]
+//     NotFound,
+//     #[fail(display = "failed to create redirections")]
+//     BadRedirection,
+// }
 
 /// A super powerful hidden command for some cryptographers.
 /// https://xkcd.com/221/

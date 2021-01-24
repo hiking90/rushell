@@ -49,10 +49,10 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 mod tests {
     use crate::shell;
     use crate::process;
-    use failure::Error;
+    use crate::utils::Result;
 
     #[test]
-    fn test_set_command() -> Result<(), Error> {
+    fn test_set_command() -> Result<()> {
         let mut shell = shell::Shell::new();
         process::run_internal_command(
             &mut shell,

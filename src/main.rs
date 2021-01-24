@@ -9,10 +9,10 @@ extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 extern crate structopt;
-#[macro_use]
-extern crate failure;
 extern crate whoami;
 extern crate regex;
+#[macro_use]
+extern crate quick_error;
 
 // #[cfg(test)]
 // extern crate test;

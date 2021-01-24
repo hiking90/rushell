@@ -1,12 +1,12 @@
-use failure::Error;
 use regex::Regex;
 use crate::glob;
+use crate::utils::Result;
 
-#[derive(Debug, Fail)]
-#[fail(display = "no matches")]
-pub struct NoMatchesError;
-
-type Result<I> = std::result::Result<I, Error>;
+quick_error! {
+    #[derive(Debug)]
+    pub enum NoMatchesError {
+    }
+}
 
 /// A word which includes patterns. We don't expand words
 /// into the `Vec<String>` directly since the patterns has

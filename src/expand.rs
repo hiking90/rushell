@@ -3,14 +3,11 @@ use crate::parser::{ExpansionOp, ProcSubstType, Span, Word};
 use crate::pattern::{PatternWord};
 use crate::shell::Shell;
 use crate::variable::Value;
-use crate::utils::home_dir_for_user;
+use crate::utils::{home_dir_for_user, Result, Error};
 use crate::variable;
-use failure::Error;
 use std::fs::File;
 use std::io::prelude::*;
 use std::os::unix::io::FromRawFd;
-
-type Result<I> = std::result::Result<I, Error>;
 
 /// TODO: Aliases should be expanded in the parser in order to support
 /// compound lists, e.g. alias cowsay-or-echo="cowsay hi || echo hi".
@@ -79,7 +76,7 @@ fn param_get_or_action(
                 shell.set(name, Value::String(word.clone()), false);
                 vec![word]
             } else {
-                failure::bail!("unsupported expansion operator `{}'", op)
+                return Err(Error::Message(format!("unsupported expansion operator `{}'", op)).into());
             }
         }
 
@@ -91,7 +88,7 @@ fn param_get_or_action(
                     vec![word]
                 }
                 _ => {
-                    failure::bail!("unsupported expansion operator `{}'", op)
+                    return Err(Error::Message(format!("unsupported expansion operator `{}'", op)).into());
                 }
             }
         }
@@ -220,11 +217,11 @@ fn expand_param(
                     }
 
                     ExpansionOp::Prefix(_) => {
-                        failure::bail!("Unsupported Parameter Expansion of Prefix `{}'", name);
+                        return Err(Error::Message(format!("Unsupported Parameter Expansion of Prefix `{}'", name)).into());
                     }
 
                     ExpansionOp::Indices(_) => {
-                        failure::bail!("Unsupported Parameter Expansion of Array Indices `{}'", name);
+                        return Err(Error::Message(format!("Unsupported Parameter Expansion of Array Indices `{}'", name)).into());
                     }
                 };
             }
@@ -235,7 +232,7 @@ fn expand_param(
     // http://pubs.opengroup.org/onlinepubs/009695399/utilities/xcu_chap02.html#tag_02_06_02
     match op {
         ExpansionOp::Prefix(_) => {
-            failure::bail!("Unsupported Parameter Expansion of Prefix `{}'", name);
+            return Err(Error::Message(format!("Unsupported Parameter Expansion of Prefix `{}'", name)).into());
         }
         ExpansionOp::Indices(_) => {
             Ok(vec!["0".to_owned()])
@@ -267,7 +264,7 @@ fn expand_param(
                     Ok(vec![content])
                 }
                 _ => {
-                    failure::bail!("unsupported expansion operator `{}'", op)
+                    return Err(Error::Message(format!("unsupported expansion operator `{}'", op)).into());
                 }
             }
         }
@@ -429,7 +426,7 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
             let offset = evaluate_expr(shell, offset);
 
             if offset < 0 {
-                failure::bail!("substring expression < 0");
+                return Err(Error::Message("substring expression < 0".into()).into());
             }
 
             let offset = offset as usize;
@@ -443,7 +440,7 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
                         let len = evaluate_expr(shell, &len);
 
                         if len < 0 {
-                            failure::bail!("substring expression < 0");
+                            return Err(Error::Message("substring expression < 0".into()).into());
                         }
 
                         values[0].get(offset .. offset + len as usize)
@@ -456,7 +453,7 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
                     let v = if let Some(len) = length {
                         let len = evaluate_expr(shell, &len);
                         if len < 0 {
-                            failure::bail!("substring expression < 0");
+                            return Err(Error::Message("substring expression < 0".into()).into());
                         }
                         values.get(offset .. offset + len as usize)
                     } else {

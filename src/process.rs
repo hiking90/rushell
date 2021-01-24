@@ -3,9 +3,8 @@ use crate::eval::*;
 use crate::expand::*;
 use crate::parser;
 use crate::shell::Shell;
-use crate::utils::FdFile;
+use crate::utils::{FdFile, Result, Error};
 use crate::variable::Value;
-use failure::Error;
 use nix;
 use nix::sys::signal::{kill, sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use nix::sys::termios::{tcgetattr, tcsetattr, SetArg::TCSADRAIN, Termios};
@@ -20,10 +19,10 @@ use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 use std::io::{Read, SeekFrom, Seek};
 
-type Result<I> = std::result::Result<I, Error>;
+// type Result<I> = std::result::Result<I, Error>;
 
 fn kill_process_group(pgid: Pid, signal: Signal) -> Result<()> {
-    kill(Pid::from_raw(-pgid.as_raw()), signal).map_err(Error::from)
+    kill(Pid::from_raw(-pgid.as_raw()), signal).map_err(|e| e.into())
 }
 
 fn move_fd(src: RawFd, dst: RawFd) {
@@ -39,10 +38,10 @@ pub fn wait_child(pid: Pid) -> Result<i32> {
         WaitStatus::Exited(_, status) => Ok(status),
         // TODO: Handle errors.
         _ => {
-            let err = format_err!("waitpid returned an unexpected value: {:?}", wait_status);
+            let msg = format!("waitpid returned an unexpected value: {:?}", wait_status);
 
-            warn!("waitpid: {}", err);
-            Err(err)
+            warn!("waitpid: {}", msg);
+            Err(Error::Message(msg).into())
         }
     }
 }
@@ -596,7 +595,7 @@ pub fn run_internal_command(
 ) -> Result<ExitStatus> {
     let func = match INTERNAL_COMMANDS.get(argv[0].as_str()) {
         Some(func) => func,
-        _ => return Err(Error::from(InternalCommandError::NotFound)),
+        _ => return Err(InternalCommandError::NotFound.into()),
     };
 
     let mut opened_fds = Vec::new();
@@ -625,7 +624,7 @@ pub fn run_internal_command(
                         }
                     } else {
                         warn!("failed to open file: `{}'", target);
-                        return Err(Error::from(InternalCommandError::BadRedirection));
+                        return Err(InternalCommandError::BadRedirection.into());
                     }
                 }
             }
@@ -652,7 +651,7 @@ pub fn run_internal_command(
                     }
                 } else {
                     warn!("failed to open file: `{}'", filepath);
-                    return Err(Error::from(InternalCommandError::BadRedirection));
+                    return Err(InternalCommandError::BadRedirection.into());
                 }
             }
             parser::RedirectionType::HereDoc(ref heredoc) => {
