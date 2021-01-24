@@ -131,7 +131,7 @@ fn main() -> io::Result<()> {
     let (history_file, init_file) = init_dir(&conf_dir)?;
 
     // Load history
-    interface.load_history(&history_file)?;
+    let _ = interface.load_history(&history_file);
 
     // Create folder scanner. It caches 5 folders.
     let folder_scanner = Arc::new(Mutex::new(completer::FolderScanner::new()));
@@ -234,6 +234,7 @@ fn main() -> io::Result<()> {
                 ReadResult::Input(line) => {
                     let trimed = line.trim().to_string();
 
+                    // To support "!command" feature.
                     let line = if trimed.starts_with("!") == true {
                         if let Some(cmd) = shell.history_starts_with(&trimed[1..]) {
                             cmd
