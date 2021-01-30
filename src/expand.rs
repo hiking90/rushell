@@ -110,7 +110,7 @@ fn param_index(shell: &mut Shell, span: &Box<Span>) -> Index {
     };
     if let Ok(idx) = idx.parse::<i32>() {
         if idx < 0 {
-            warn!("the index must be larger than or equals 0: index={}", idx);
+            print_err!("the index must be larger than or equals 0: index={}", idx);
             Index::Invalid
         } else {
             Index::Position(idx as usize)
@@ -118,7 +118,7 @@ fn param_index(shell: &mut Shell, span: &Box<Span>) -> Index {
     } else if idx == "*" || idx == "@" {
         Index::All
     } else {
-        warn!(
+        print_err!(
             "the index must be number or '*' or '@': index={:?}", idx
         );
         Index::Invalid

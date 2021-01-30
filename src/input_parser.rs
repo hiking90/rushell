@@ -212,6 +212,7 @@ fn io_redirect<'a>() -> Parser<'a, char, Item> {
                 tag(">") |
                 tag(">|") |
                 tag(">&") |
+                tag("&>") |
                 tag(">>&") |
                 tag(">>") |
                 tag("<>")

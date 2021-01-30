@@ -357,59 +357,6 @@ pub fn run_external_command(
     redirects: &[parser::Redirection],
     assignments: &[parser::Assignment],
 ) -> Result<ExitStatus> {
-    let mut fds = Vec::new();
-    for r in redirects {
-        match r.target {
-            parser::RedirectionType::FileOrFd(ref target) => {
-                let target = expand_word_into_string(shell, target)?;
-                if let Ok(fd) = target.parse::<i32>() {
-                    fds.push((fd, r.fd as RawFd));
-                } else {
-                    let options = open_option_new(&r.direction);
-                    if let Ok(file) = options.open(&target) {
-                        fds.push((file.into_raw_fd(), r.fd as RawFd))
-                    } else {
-                        warn!("failed to open file: `{}'", target);
-                        return Ok(ExitStatus::ExitedWith(1));
-                    }
-                }
-            }
-            parser::RedirectionType::Fd(ref fd) => {
-                fds.push((*fd, r.fd as RawFd));
-            }
-            parser::RedirectionType::File(ref wfilepath) => {
-                let options = open_option_new(&r.direction);
-
-                trace!("redirection: options={:?}", options);
-                let filepath = expand_word_into_string(shell, wfilepath)?;
-                if let Ok(file) = options.open(&filepath) {
-                    fds.push((file.into_raw_fd(), r.fd as RawFd))
-                } else {
-                    warn!("failed to open file: `{}'", filepath);
-                    return Ok(ExitStatus::ExitedWith(1));
-                }
-            }
-            parser::RedirectionType::HereDoc(ref heredoc) => {
-                fds.push((evaluate_heredoc(shell, heredoc)?, r.fd as RawFd))
-            }
-            parser::RedirectionType::UnresolvedHereDoc { .. } => {
-                // must be resolved in the parser
-                unreachable!()
-            }
-        }
-    }
-
-    // Use provided (e.g. pipeline) stdin/stdout/stderr if no redirections speicfied.
-    if !fds.iter().any(|(_, dst)| *dst == 0) {
-        fds.push((ctx.stdin, 0));
-    }
-    if !fds.iter().any(|(_, dst)| *dst == 1) {
-        fds.push((ctx.stdout, 1));
-    }
-    if !fds.iter().any(|(_, dst)| *dst == 2) {
-        fds.push((ctx.stderr, 2));
-    }
-
     // Determine the absolute path of the command.
     let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") || argv[0].starts_with("../") {
         argv[0].to_owned()
@@ -447,9 +394,75 @@ pub fn run_external_command(
         args.push(CString::new(arg)?);
     }
 
+    let mut fds = Vec::new();
+    let fds_close = |fds: Vec<(RawFd, RawFd)>| {
+        for fd in fds {
+            if fd.0 != ctx.stdin && fd.0 != ctx.stdout && fd.0 != ctx.stderr {
+                close(fd.0).expect("failed to close");
+            }
+        }
+    };
+
+    for r in redirects {
+        match r.target {
+            parser::RedirectionType::FileOrFd(ref target) => {
+                let target = expand_word_into_string(shell, target)?;
+                if let Ok(fd) = target.parse::<i32>() {
+                    fds.push((fd, r.fd as RawFd));
+                } else {
+                    let options = open_option_new(&r.direction);
+                    if let Ok(file) = options.open(&target) {
+                        fds.push((file.into_raw_fd(), r.fd as RawFd))
+                    } else {
+                        fds_close(fds);
+                        print_err!("failed to open file: `{}'", target);
+                        return Ok(ExitStatus::ExitedWith(1));
+                    }
+                }
+            }
+            parser::RedirectionType::Fd(ref fd) => {
+                fds.push((*fd, r.fd as RawFd));
+            }
+            parser::RedirectionType::File(ref wfilepath) => {
+                let options = open_option_new(&r.direction);
+
+                trace!("redirection: options={:?}", options);
+                let filepath = expand_word_into_string(shell, wfilepath)?;
+                if let Ok(file) = options.open(&filepath) {
+                    fds.push((file.into_raw_fd(), r.fd as RawFd))
+                } else {
+                    fds_close(fds);
+                    print_err!("failed to open file: `{}'", filepath);
+                    return Ok(ExitStatus::ExitedWith(1));
+                }
+            }
+            parser::RedirectionType::HereDoc(ref heredoc) => {
+                fds.push((evaluate_heredoc(shell, heredoc)?, r.fd as RawFd))
+            }
+            parser::RedirectionType::UnresolvedHereDoc { .. } => {
+                // must be resolved in the parser
+                unreachable!()
+            }
+        }
+    }
+
+    // Use provided (e.g. pipeline) stdin/stdout/stderr if no redirections speicfied.
+    if !fds.iter().any(|(_, dst)| *dst == 0) {
+        fds.push((ctx.stdin, 0));
+    }
+    if !fds.iter().any(|(_, dst)| *dst == 1) {
+        fds.push((ctx.stdout, 1));
+    }
+    if !fds.iter().any(|(_, dst)| *dst == 2) {
+        fds.push((ctx.stderr, 2));
+    }
+
     // Spawn a child.
     match fork().expect("failed to fork") {
-        ForkResult::Parent { child } => Ok(ExitStatus::Running(child)),
+        ForkResult::Parent { child } => {
+            fds_close(fds);
+            Ok(ExitStatus::Running(child))
+        },
         ForkResult::Child => {
             // Create or join a process group.
             if ctx.interactive {
@@ -623,7 +636,7 @@ pub fn run_internal_command(
                             _ => (),
                         }
                     } else {
-                        warn!("failed to open file: `{}'", target);
+                        print_err!("failed to open file: `{}'", target);
                         return Err(InternalCommandError::BadRedirection.into());
                     }
                 }
@@ -650,7 +663,7 @@ pub fn run_internal_command(
                         _ => (),
                     }
                 } else {
-                    warn!("failed to open file: `{}'", filepath);
+                    print_err!("failed to open file: `{}'", filepath);
                     return Err(InternalCommandError::BadRedirection.into());
                 }
             }
