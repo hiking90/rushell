@@ -130,7 +130,7 @@ fn literal_in_double_quoted_span<'a>() -> Parser<'a, char, ()> {
             )
         ).repeat(1..).discard()
 
-        | (sym('$') + one_of(" \t\r").repeat(1..) + any()).collect().discard()
+        | (sym('$') + one_of(" \t\r").repeat(1..)).collect().discard()
     )
     | (sym('$') - (-sym('\"'))).discard()
 }

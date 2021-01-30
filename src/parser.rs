@@ -406,7 +406,7 @@ fn literal_in_double_quoted_span<'a>() -> Parser<'a, char, Span> {
             )
         ).repeat(1..)
 
-        | (sym('$') + one_of(WHITESPACE).repeat(1..) + any()).collect()
+        | (sym('$') + one_of(WHITESPACE).repeat(1..)).collect()
         .map(|a| Vec::from(a))
     ).map(|chars| {
         Span::Literal(String::from_iter(chars.iter()))
@@ -4007,6 +4007,33 @@ pub fn test_comments() {
 #[test]
 pub fn test_string_literal() {
     let parser = ShellParser::new();
+
+    assert_eq!(
+        parser.parse("docker run --env PS1=\"DAC(\\#)[\\d \\T:\\w]\\\\$ \""),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "docker run --env PS1=\"DAC(\\#)[\\d \\T:\\w]\\\\$ \"".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        external: false,
+                        argv: vec![
+                            lit!("docker"),
+                            lit!("run"),
+                            lit!("--env"),
+                            Word(vec![
+                                Span::Literal("PS1=".into()),
+                                Span::Literal("DAC(\\#)[\\d \\T:\\w]\\".into()),
+                                Span::Literal("$ ".into())]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![]
+                    }]
+                }],
+            }],
+        })
+    );
 
     assert_eq!(
         parser.parse("echo \"hello\""),
