@@ -46,7 +46,7 @@ fn parse<'a>() -> Parser<'a, char, Alias> {
 fn parse_alias(alias: &str) -> Result<Alias, parser::ParseError> {
     let chars: Vec<char> = alias.chars().collect();
     parse().parse(Arc::new(InputV { input: chars.to_vec() }))
-        .map_err(|err| parser::error_convert(&chars.to_vec(), err))
+        .map_err(|err| parser::error_convert(alias, err))
 }
 
 #[test]

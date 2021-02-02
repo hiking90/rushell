@@ -477,6 +477,7 @@ impl Shell {
                 ExitStatus::ExitedWith(0)
             }
             Err(parser::ParseError::Expected(_err)) => {
+                print_err!("parse error: {}", _err);
                 ExitStatus::Expected
             }
             Err(parser::ParseError::Fatal(err)) => {

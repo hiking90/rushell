@@ -402,7 +402,7 @@ fn literal_in_double_quoted_span<'a>() -> Parser<'a, char, Span> {
             // ‘$’, ‘`’, ‘"’, ‘\’, or newline.
             (
                 (sym('\\') * one_of("\\$`\"\""))
-                | none_of("\"$`")
+                | none_of("\"$`\n")
             )
         ).repeat(1..)
 
@@ -578,7 +578,6 @@ fn brace_literal_span<'a>() -> Parser<'a, char, Span> {
         Span::Literal(String::from_iter(chars))
     })
 }
-
 
 fn word<'a>(word_type: WordType) -> Parser<'a, char, Word> {
     let not_set = match word_type {
@@ -1234,6 +1233,70 @@ fn cmd_name<'a>() -> Parser<'a, char, (bool, Word)> {
     })
 }
 
+fn heredoc_quoted_line<'a>(trim: bool) -> Parser<'a, char, Word> {
+    let trim = if trim {
+        space()
+    } else {
+        empty()
+    };
+
+    (
+        trim * none_of("\n").repeat(0..) - sym('\n')
+    ).map(|chars| {
+        Word(vec![Span::Literal(String::from_iter(chars))])
+    })
+}
+
+fn _heredoc_line<'a>() -> Parser<'a, char, Vec<Span>> {
+    (
+        param_span()
+        | param_ex_span()
+        | expr_span()
+        | command_span()
+        | backtick_span()
+        | command_substitution_span()
+        | none_of("\n").map(|c| Span::Literal(c.to_string()))
+    ).repeat(0..)
+    - sym('\n')
+}
+
+fn heredoc_line<'a>(trim: bool) -> Parser<'a, char, Word> {
+    let trim = if trim {
+        space()
+    } else {
+        empty()
+    };
+
+    (
+        trim *
+        Parser::new(move |input: Arc<dyn Input<char>>, start: usize| {
+            (HEREDOC_LINE.method)(input.clone(), start)
+        })
+    ).map(|spans| {
+        let mut res = vec![];
+        let mut literal = String::new();
+
+        spans.into_iter().for_each(|s| {
+            match s {
+                Span::Literal(l) => literal.push_str(&l),
+                _ => {
+                    if literal.len() > 0 {
+                        res.push(Span::Literal(literal.clone()));
+                        literal = String::new();
+                    }
+                    res.push(s);
+                }
+            }
+        });
+
+        if literal.len() > 0 {
+            res.push(Span::Literal(literal));
+        }
+
+        Word(res)
+    })
+}
+
 // simple_command   : cmd_prefix cmd_word cmd_suffix
 //                  | cmd_prefix cmd_word
 //                  | cmd_prefix
@@ -1241,19 +1304,52 @@ fn cmd_name<'a>() -> Parser<'a, char, (bool, Word)> {
 //                  | cmd_name
 //                  ;
 fn simple_command<'a>() -> Parser<'a, char, Command> {
-    (cmd_prefix() + cmd_name() + cmd_suffix()).map(|(((assignments, redirects_p), (ext, name)), (mut words, mut redirects_s))| {
+    (cmd_prefix() + cmd_name() + cmd_suffix())
+    .custom_parser(|(((assignments, redirects_p), (ext, name)), (mut words, mut redirects_s)), input, mut pos| {
         let mut argv = vec![name];
         argv.append(&mut words);
 
         let mut redirects = redirects_p;
         redirects.append(&mut redirects_s);
 
-        Command::SimpleCommand {
+        let mut heredocs = vec![];
+        redirects.iter_mut().for_each(|r| {
+            match &r.target {
+                RedirectionType::UnresolvedHereDoc {..} => {
+                    heredocs.push(r);
+                }
+                _ => {}
+            }
+        });
+
+        for heredoc in heredocs {
+            if let RedirectionType::UnresolvedHereDoc { delimiter, quoted, trim } = &heredoc.target {
+                let delimiter = delimiter.to_string();
+
+                let line_parser = if *quoted {
+                    heredoc_quoted_line(*trim)
+                }
+                else {
+                    heredoc_line(*trim)
+                };
+
+                let parser = space() * sym('\n') *
+                    (!tag(&delimiter) * line_parser).repeat(0..)
+                    - tag(&delimiter).expect(&delimiter) - sym('\n');
+
+                let res = parser.parse_at(input.clone(), pos)?;
+
+                heredoc.target = RedirectionType::HereDoc(HereDoc(res.0));
+                pos = res.1 - 1;    // The last '\n' should be parsed by outsize of this function.
+            }
+        }
+
+        Ok((Command::SimpleCommand {
             external: ext,
             argv: argv,
             redirects: redirects,
             assignments: assignments,
-        }
+        }, pos))
     })
 }
 
@@ -1442,7 +1538,7 @@ fn compound_command<'a>() -> Parser<'a, char, Command> {
 fn case_clause<'a>() -> Parser<'a, char, Command> {
     (
         tag("case") * space() * cmd_word().expect("word") - linebreak() - tag("in").expect("in") - linebreak()
-        + (case_list() | case_list_ns()).opt() - tag("esac").expect("esac")
+        + (case_list() | case_list_ns()).opt() - space() * tag("esac").expect("esac")
     ).map(|(word, cases)| {
         Command::Case {
             word: word,
@@ -1474,7 +1570,7 @@ fn case_list_ns<'a>() -> Parser<'a, char, Vec<CaseItem>> {
     })
 }
 
-// case_item_ns     :     pattern ')' linebreak
+// case_item_ns     :     pattern ')'
 //                  |     pattern ')' compound_list
 //                  | '(' pattern ')' linebreak
 //                  | '(' pattern ')' compound_list
@@ -1483,11 +1579,11 @@ fn case_item_ns<'a>() -> Parser<'a, char, CaseItem> {
     (
         (sym('(') * space()).opt()
         * pattern() - sym(')')
-        + (linebreak().map(|_| vec![]) | compound_list())
+        + compound_list().opt() - linebreak().opt()
     ).map(|(patterns, terms)| {
         CaseItem {
             patterns: patterns,
-            body: terms,
+            body: terms.unwrap_or(vec![]),
         }
     })
 }
@@ -1499,14 +1595,14 @@ fn case_item_ns<'a>() -> Parser<'a, char, CaseItem> {
 //                  ;
 fn case_item<'a>() -> Parser<'a, char, CaseItem> {
     (
-        (sym('(') * space()).opt()
-        * pattern() - sym(')')
-        + (compound_list() | linebreak().map(|_| vec![]))
-        - tag(";;") - linebreak()
+        space() * (sym('(') * space()).opt()
+        * pattern() - sym(')').expect(")")
+        + compound_list().opt() - linebreak().opt()
+        - space() - tag(";;").expect(";;") - linebreak()
     ).map(|(patterns, terms)| {
         CaseItem {
             patterns: patterns,
-            body: terms,
+            body: terms.unwrap_or(vec![]),
         }
     })
 }
@@ -1528,7 +1624,7 @@ fn brace_group<'a>() -> Parser<'a, char, Command> {
     (
         sym('{')
         * compound_list()
-        - sym('}').expect("}")
+        - space() * sym('}').expect("}")
     )
     .map(|terms| Command::Group { terms: terms })
 }
@@ -1606,7 +1702,7 @@ fn for_clause<'a>() -> Parser<'a, char, Command> {
 
 // do_group         : Do compound_list Done           /* Apply rule 6 */
 fn do_group<'a>() -> Parser<'a, char, Vec<Term>> {
-    tag("do") * compound_list() - tag("done").expect("done")
+    space() * tag("do") * compound_list() - space() * tag("done").expect("done")
 }
 
 // if_clause        : If compound_list Then compound_list else_part Fi
@@ -1615,7 +1711,7 @@ fn do_group<'a>() -> Parser<'a, char, Vec<Term>> {
 fn if_clause<'a>() -> Parser<'a, char, Command> {
     (
         tag("if") * compound_list()
-        - tag("then").expect("then") + compound_list()
+        - space() * tag("then").expect("then") + compound_list()
         + elif_part().repeat(0..)
         + else_part().opt()
         - space() - tag("fi").expect("fi")
@@ -1632,7 +1728,7 @@ fn if_clause<'a>() -> Parser<'a, char, Command> {
 
 // elif_part = { "elif" ~ compound_list ~ "then" ~ compound_list }
 fn elif_part<'a>() -> Parser<'a, char, ElIf> {
-    (tag("elif") * compound_list() - tag("then").expect("then") + compound_list())
+    (space() * tag("elif") * compound_list() - tag("then").expect("then") + compound_list())
     .map(|(condition, then_part)| {
         ElIf {
             condition: condition,
@@ -1643,7 +1739,7 @@ fn elif_part<'a>() -> Parser<'a, char, ElIf> {
 
 // else_part = { "else" ~ compound_list }
 fn else_part<'a>() -> Parser<'a, char, Vec<Term>> {
-    tag("else") * compound_list()
+    space() * tag("else") * compound_list()
 }
 
 // while_command = {
@@ -1739,97 +1835,39 @@ fn complete_command<'a>() -> Parser<'a, char, Vec<Term>> {
 fn complete_commands<'a>() -> Parser<'a, char, Vec<Term>> {
     let cmds = newline_list() * complete_command();
 
-    newline_list().map(|_| vec![]) |
-    linebreak() *
+    // newline_list().map(|_| vec![]) |
+    // linebreak() *
     (complete_command() + cmds.repeat(0..).map(|cmds| cmds.concat())).map(|(mut c1, mut c2)| { c1.append(&mut c2); c1 })
 }
 
 // program          : linebreak complete_commands linebreak
 //                  | linebreak
 //                  ;
-// fn program<'a>() -> Parser<'a, char, Ast> {
-    // newline_list().map(|_| Ast{ terms: vec![]}) |
-    // (linebreak() * complete_commands() - linebreak()).map(|terms| Ast{ terms: terms })
-// }
-
-fn heredoc_line_quoted<'a>(trim: bool) -> Parser<'a, char, (Word, usize)> {
-    let trim = if trim {
-        space()
-    } else {
-        empty()
-    };
-
-    (
-        trim * none_of("\n").repeat(0..) - sym('\n').opt() + empty().pos()
-    ).map(|(chars, end)| {
-        (Word(vec![Span::Literal(String::from_iter(chars))]), end)
-    })
-}
-
-fn heredoc_line<'a>(trim: bool) -> Parser<'a, char, (Word, usize)> {
-    let trim = if trim {
-        space()
-    } else {
-        empty()
-    };
-
-    (
-        trim *
-        (
-            param_span()
-            | param_ex_span()
-            | expr_span()
-            | command_span()
-            | backtick_span()
-            | command_substitution_span()
-            | none_of("\n").map(|c| Span::Literal(c.to_string()))
-        ).repeat(0..)
-        - sym('\n').opt()
-        + empty().pos()
-    ).map(|(spans, end)| {
-        let mut res = vec![];
-        let mut literal = String::new();
-
-        spans.into_iter().for_each(|s| {
-            match s {
-                Span::Literal(l) => literal.push_str(&l),
-                _ => {
-                    if literal.len() > 0 {
-                        res.push(Span::Literal(literal.clone()));
-                        literal = String::new();
-                    }
-                    res.push(s);
-                }
-            }
-        });
-
-        if literal.len() > 0 {
-            res.push(Span::Literal(literal));
-        }
-
-        (Word(res), end)
-    })
+fn program<'a>() -> Parser<'a, char, Ast> {
+    (linebreak() * complete_commands() - linebreak()).map(|terms| Ast{ terms: terms })
+    | newline_list().map(|_| Ast{ terms: vec![]})
 }
 
 lazy_static! {
-    pub static ref PROGRAM: Parser<'static, char, Vec<Term>> = complete_commands();
+    pub static ref PROGRAM: Parser<'static, char, Ast> = program();
     pub static ref COMPOUND_LIST: Parser<'static, char, Vec<Term>> = _compound_list();
     pub static ref EXPR: Parser<'static, char, Box<Expr>> = _expr();
     pub static ref PARAM_EX_SPAN: Parser<'static, char, Span> = _param_ex_span();
+    pub static ref HEREDOC_LINE: Parser<'static, char, Vec<Span>> = _heredoc_line();
 }
 
-pub fn error_convert(code: &[char], err: pom::Error) -> ParseError {
+pub fn error_convert(input: &str, err: pom::Error) -> ParseError {
     let (message, position) = match err {
         pom::Error::Repeat { ref message, position, .. } => (message.to_string(), position),
         pom::Error::Mismatch { ref message, position } => (message.to_string(), position),
         pom::Error::Conversion { ref message, position } => (message.to_string(), position),
         pom::Error::Expect { ref message, position, .. } => (message.to_string(), position),
         pom::Error::Custom { ref message, position, .. } => (message.to_string(), position),
-        pom::Error::Incomplete => ("Incomplete".to_string(), code.len()),
+        pom::Error::Incomplete => ("Incomplete".to_string(), input.len()),
     };
 
     let message = format!("{}\n  |\n  | {}  | {}^---\n  |",
-        message, String::from_iter(code), " ".repeat(position)
+        message, input, " ".repeat(position)
     );
 
     match err {
@@ -1852,37 +1890,6 @@ impl ShellParser {
         }
     }
 
-    fn look_for_heredoc<'a>(&self, terms: &'a mut Vec<Term>) -> Vec<&'a mut Redirection> {
-        let mut heredocs = vec![];
-
-        terms.iter_mut().for_each(|term| {
-            if term.code.contains("<<") {
-                term.pipelines.iter_mut().for_each(|pipe| {
-                    pipe.commands.iter_mut().for_each(|cmd| {
-                        match cmd {
-                            Command::SimpleCommand {
-                                external: _, argv: _, redirects, assignments: _
-                            } => {
-                                redirects.iter_mut().for_each(|r| {
-                                    match &r.target {
-                                        RedirectionType::UnresolvedHereDoc {..} => {
-                                            heredocs.push(r);
-                                        }
-                                        _ => {}
-                                    }
-                                })
-                            }
-                            _ => {}
-                        }
-                    })
-                })
-            }
-        });
-
-        heredocs
-    }
-
-
     pub fn parse(&self, script: &str) -> Result<Ast, ParseError> {
         let mut input: Vec<char> = script.chars().collect();
 
@@ -1891,99 +1898,17 @@ impl ShellParser {
             _ => input.push('\n'),
         }
 
-        let extract_line = empty().pos() +
-            (tag("\\\n").discard() | none_of("\n").discard()).repeat(0..)
-            * sym('\n').discard() * empty().pos();
-
-        let mut last_pos: usize = 0;
-        let mut parse_pos: usize = 0;
-
-        let mut terms = vec![];
-
-        while last_pos < input.len() {
-            let res = extract_line.parse(Arc::new(InputV { input: input[last_pos..].to_vec()}))
-                .map_or((last_pos, input.len()), |(s, e)| (last_pos + s, last_pos + e));
-
-            let mut end_pos = res.1;
-
-            // println!("{:?} {:?} {:?} len: {:?}, [{}]\n[{}]",
-            //     res.0, parse_pos, end_pos, input.len(),
-            //     String::from_iter(input[res.0 .. end_pos].iter()),
-            //     String::from_iter(input[parse_pos .. end_pos].iter()));
-
-            if res.0 == end_pos {
-                break;
-            }
-
-            last_pos = end_pos;
-
-            let mut res = PROGRAM.parse(Arc::new(InputV {
-                input: input[parse_pos .. end_pos].to_vec(),
-            }));
-
-            // if let Ok(ref mut cmds) = res {
-            match res {
-                Ok(ref mut cmds) => {
-                    let heredocs = self.look_for_heredoc(cmds);
-
-                    if heredocs.len() > 0 {
-                        let mut line_start = end_pos;
-
-                        for heredoc in heredocs {
-                            let mut words = vec![];
-                            if let RedirectionType::UnresolvedHereDoc { delimiter, quoted, trim } = &heredoc.target {
-                                let line_parser = if *quoted { heredoc_line_quoted(*trim) } else { heredoc_line(*trim) };
-
-                                loop {
-                                    let res = line_parser.parse(Arc::new(InputV {
-                                        input: input[line_start..].to_vec(),
-                                    }));
-
-                                    match res {
-                                        Ok((word, line_end)) => {
-                                            line_start += line_end;
-
-                                            if let Some(span) = word.spans().first() {
-                                                match span {
-                                                    Span::Literal(literal) if *literal == *delimiter => {
-                                                        heredoc.target = RedirectionType::HereDoc(HereDoc(words));
-                                                        break;
-                                                    }
-                                                    _ => words.push(word),
-                                                }
-                                            } else {
-                                                words.push(word);
-                                            }
-                                        }
-                                        Err(err) => return Err(error_convert(&input[parse_pos .. end_pos], err)),
-                                    }
-
-                                    if line_start >= input.len() {
-                                        return Err(ParseError::Expected(
-                                                format!("There is no HereDoc delimiter '{}'", delimiter)
-                                            ));
-                                    }
-                                }
-                            }
-                        }
-                        last_pos = line_start;
-                        end_pos = line_start;
-                    }
-
-                    terms.append(cmds);
-                    parse_pos = end_pos;
+        match PROGRAM.parse(Arc::new(InputV {
+            input: input
+        })) {
+            Ok(ast) => {
+                if ast.terms.len() == 0 {
+                    Err(ParseError::Empty)
+                } else {
+                    Ok(ast)
                 }
-                Err(err) => match err {
-                    pom::Error::Expect { .. } => {}
-                    _ => return Err(error_convert(&input[parse_pos .. end_pos], err)),
-                }
-            }
-        }
-
-        if terms.len() == 0 {
-            Err(ParseError::Empty)
-        } else {
-            Ok(Ast { terms: terms })
+            },
+            Err(err) => Err(error_convert(&script, err))
         }
     }
 }
@@ -2526,10 +2451,69 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parser.parse("while maybe-true;\ndo\n echo \"while loop!\"; done"),
+        parser.parse("    if true; then\n echo it works;\n    else\n echo $PATH\n   fi\n"),
         Ok(Ast {
             terms: vec![Term {
-                code: "while maybe-true;\ndo\n echo \"while loop!\"; done".into(),
+                code: "if true; then\n echo it works;\n    else\n echo $PATH\n   fi".into(),
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::If {
+                        condition: vec![Term {
+                            code: "true".into(),
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: literal_word_vec!["true"],
+                                    redirects: vec![],
+                                    assignments: vec![],
+                                }],
+                            }],
+                            background: false,
+                        }],
+                        then_part: vec![Term {
+                            code: "echo it works".into(),
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: literal_word_vec!["echo", "it", "works"],
+                                    redirects: vec![],
+                                    assignments: vec![],
+                                }],
+                            }],
+                            background: false,
+                        }],
+                        elif_parts: vec![],
+                        else_part: Some(vec![Term {
+                            code: "echo $PATH".into(),
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: vec![
+                                        lit!("echo"),
+                                        param!("PATH", ExpansionOp::GetOrEmpty, false),
+                                    ],
+                                    redirects: [].to_vec(),
+                                    assignments: [].to_vec()
+                                }]
+                            }],
+                            background: false
+                        }]),
+                        redirects: vec![],
+                    }],
+                }],
+                background: false,
+            }],
+        })
+    );
+
+    assert_eq!(
+        parser.parse("while maybe-true;\n   do\n echo \"while loop!\"; \n   done"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "while maybe-true;\n   do\n echo \"while loop!\"; \n   done".into(),
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::While {
@@ -2569,14 +2553,14 @@ pub fn test_compound_commands() {
     assert_eq!(
         parser.parse(concat!(
             "if [ foo = \"foo\" ];\n",
-            "then\n",
+            "   then\n",
             "    echo hello\n",
             "    echo world\n",
-            "fi"
+            "   fi"
         )),
         Ok(Ast {
             terms: vec![Term {
-                code: "if [ foo = \"foo\" ];\nthen\n    echo hello\n    echo world\nfi".into(),
+                code: "if [ foo = \"foo\" ];\n   then\n    echo hello\n    echo world\n   fi".into(),
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::If {
@@ -3022,14 +3006,18 @@ pub fn test_compound_commands() {
 
     assert_eq!(
         parser.parse(concat!(
-            "case $action in\n",
-            "echo) echo action is echo ;;\n",
-            "date | time) echo action is date; date ;;\n",
-            "esac"
+            "  case $action in\n",
+            "    echo) echo action is echo ;;\n",
+            "    date | time) echo action is date; date \n",
+            "       ;;\n",
+            "    *)\n",
+            "       # No need to set ARM_EABI_TOOLCHAIN for other ARCHs\n",
+            "       ;;\n",
+            "  esac\n"
         )),
         Ok(Ast {
             terms: vec![Term {
-                code: "case $action in\necho) echo action is echo ;;\ndate | time) echo action is date; date ;;\nesac".into(),
+                code: "case $action in\n    echo) echo action is echo ;;\n    date | time) echo action is date; date \n       ;;\n    *)\n       # No need to set ARM_EABI_TOOLCHAIN for other ARCHs\n       ;;\n  esac".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
@@ -3085,6 +3073,10 @@ pub fn test_compound_commands() {
                                     },
                                 ],
                             },
+                            CaseItem {
+                                patterns: vec![lit!("*")],
+                                body: vec![]
+                            },
                         ],
                     }],
                 }],
@@ -3093,11 +3085,11 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parser.parse("function func1() { echo hello; echo world; return 3; }; func1"),
+        parser.parse("function func1() { echo hello; echo world; return 3;\n }; func1"),
         Ok(Ast {
             terms: vec![
                 Term {
-                    code: "function func1() { echo hello; echo world; return 3; }".into(),
+                    code: "function func1() { echo hello; echo world; return 3;\n }".into(),
                     background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
@@ -4425,7 +4417,8 @@ pub fn test_heredoc() {
         )),
         Ok(Ast {
             terms: vec![Term {
-                code: "cat << EOF > file.txt".into(),
+                // code: "cat << EOF > file.txt".into(),
+                code: "cat << EOF > file.txt\nhello world\nfrom\nheredoc!\nEOF".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
@@ -4453,43 +4446,51 @@ pub fn test_heredoc() {
         })
     );
 
-    assert_eq!(
+    assert_ne!(
         parser.parse(concat!(
             "cat << EOF > file.txt\n",
-            "hello world\n",
-            "from\n",
-            "heredoc!\n",
         )),
-        Err(ParseError::Expected ("There is no HereDoc delimiter \'EOF\'".into())),
+        // Err(ParseError::Expected {})
+        Ok(Ast { terms: vec![] })
     );
 
     assert_eq!(
         parser.parse(concat!(
-            "cat <<EOF\n",
+            "function hmm() {\n",
+            "cat <<FUNC\n",
             "lunch <product_name>-<build_variant>\n",
-            "EOF\n",
+            "FUNC\n",
+            "}\n",
         )),
         Ok(Ast {
             terms: vec![Term {
-                code: "cat <<EOF".into(),
+                code: "function hmm() {\ncat <<FUNC\nlunch <product_name>-<build_variant>\nFUNC\n}".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
-                    commands: vec![Command::SimpleCommand {
-                        external: false,
-                        argv: vec![lit!("cat")],
-                        redirects: vec![
-                            Redirection {
-                                fd: 0,
-                                direction: RedirectionDirection::Input,
-                                target: RedirectionType::HereDoc(HereDoc(
-                                    vec![lit!("lunch <product_name>-<build_variant>")],
-                                )),
-                            }
-                        ],
-                        assignments: vec![],
-                    }],
-                }],
+                    commands: vec![Command::FunctionDef {
+                        name: "hmm".into(),
+                        body: Box::new(Command::Group { terms: vec![Term {
+                            code: "cat <<FUNC\nlunch <product_name>-<build_variant>\nFUNC".into(),
+                            background: false,
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: vec![lit!("cat")],
+                                    redirects: vec![Redirection {
+                                        fd: 0,
+                                        direction: RedirectionDirection::Input,
+                                        target: RedirectionType::HereDoc(HereDoc(
+                                            vec![lit!("lunch <product_name>-<build_variant>")]
+                                        ))
+                                    }],
+                                    assignments: vec![],
+                                }]
+                            }]
+                        }]})
+                    }]
+                }]
             }],
         })
     );
@@ -4502,7 +4503,7 @@ pub fn test_heredoc() {
         )),
         Ok(Ast {
             terms: vec![Term {
-                code: "cat <<EOF".into(),
+                code: "cat <<EOF\nlunch $PWD <${product_name}>-<${build_variant}>\nEOF".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
@@ -4558,7 +4559,7 @@ pub fn test_heredoc() {
         )),
         Ok(Ast {
             terms: vec![Term {
-                code: "cat <<- EOF > file.txt".into(),
+                code: "cat <<- EOF > file.txt\n\thello world\n\tfrom\n\theredoc!\nEOF".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
@@ -4594,7 +4595,7 @@ pub fn test_heredoc() {
         )),
         Ok(Ast {
             terms: vec![Term {
-                code: "cat <<\"EOF\"".into(),
+                code: "cat <<\"EOF\"\nlunch $PWD <${product_name}>-<${build_variant}>\nEOF".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,

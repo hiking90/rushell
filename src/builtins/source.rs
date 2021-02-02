@@ -7,7 +7,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         match ctx.shell.run_file(std::path::PathBuf::from(&filepath)) {
             Ok(status) => status,
             Err(err) => {
-                writeln!(ctx.stderr, "rushell: failed open the file: {:?}", err).ok();
+                writeln!(ctx.stderr, "rushell: failed open the file: {}\n{:?}", filepath, err).ok();
                 ExitStatus::ExitedWith(1)
             }
         }
