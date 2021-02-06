@@ -20,7 +20,7 @@ fn equal_script(script: &str, expect: &str) {
 
     let (pipe_in, pipe_out) = pipe().expect("failed to create a pipe");
 
-    let status = shell.run_str_with_stdio(script, 0, pipe_out, 2);
+    let status = shell.run_str_with_stdio(script, false, 0, pipe_out, 2);
     assert_eq!(status, process::ExitStatus::ExitedWith(0));
     close(pipe_out).ok();
 

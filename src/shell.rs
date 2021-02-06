@@ -450,22 +450,23 @@ impl Shell {
         let mut f = File::open(script_file)?;
         let mut script = String::new();
         f.read_to_string(&mut script)?;
-        Ok(self.run_str(script.as_str()))
+        Ok(self.run_str(script.as_str(), false))
     }
 
     /// Parses and runs a script. Stdin/stdout/stderr are 0, 1, 2, respectively.
-    pub fn run_str(&mut self, script: &str) -> ExitStatus {
+    pub fn run_str(&mut self, script: &str, interactive: bool) -> ExitStatus {
         // Inherit shell's stdin/stdout/stderr.
         let stdin = 0;
         let stdout = 1;
         let stderr = 2;
-        self.run_str_with_stdio(script, stdin, stdout, stderr)
+        self.run_str_with_stdio(script, interactive, stdin, stdout, stderr)
     }
 
     /// Parses and runs a script in the given context.
     pub fn run_str_with_stdio(
         &mut self,
         script: &str,
+        interactive: bool,
         stdin: RawFd,
         stdout: RawFd,
         stderr: RawFd,
@@ -478,7 +479,11 @@ impl Shell {
             }
             Err(parser::ParseError::Expected(_err)) => {
                 print_err!("parse error: {}", _err);
-                ExitStatus::Expected
+                if interactive {
+                    ExitStatus::Expected
+                } else {
+                    ExitStatus::ExitedWith(-1)
+                }
             }
             Err(parser::ParseError::Fatal(err)) => {
                 print_err!("parse error: {}", err);

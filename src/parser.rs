@@ -335,22 +335,12 @@ fn linebreak<'a>() -> Parser<'a, char, ()> {
 }
 
 fn separator_op<'a>() -> Parser<'a, char, bool> {
-    ((!tag(";;") * sym(';')).map(|_| false) | (!tag("&&") * sym('&')).map(|_| true)) - space()
+    space() * ((!tag(";;") * sym(';')).map(|_| false) | (!tag("&&") * sym('&')).map(|_| true)) - space()
 }
 
 fn separator<'a>() -> Parser<'a, char, bool> {
-    (separator_op() - linebreak())
+    (separator_op() - linebreak().opt())
     | newline_list().map(|_| false)
-}
-
-// sequential_sep   : ';' linebreak
-//                  | newline_list
-//                  ;
-fn sequential_sep<'a>() -> Parser<'a, char, ()> {
-    (
-        (sym(';') * linebreak())
-        | newline_list()
-    ).discard()
 }
 
 pub fn reserved_word<'a>() -> Parser<'a, char, ()> {
@@ -373,7 +363,7 @@ pub fn reserved_word<'a>() -> Parser<'a, char, ()> {
     | tag("then")
     | tag("while")
     | tag("[[")
-    ) * one_of(" \t\r\n").discard()
+    ) * (!word_char("")).discard()
 }
 
 enum WordType {
@@ -401,12 +391,13 @@ fn literal_in_double_quoted_span<'a>() -> Parser<'a, char, Span> {
             // The backslash retains its special meaning only when followed by one of the following characters:
             // ‘$’, ‘`’, ‘"’, ‘\’, or newline.
             (
-                (sym('\\') * one_of("\\$`\"\""))
+                (sym('\\') * one_of("\\$`\""))
                 | none_of("\"$`\n")
             )
         ).repeat(1..)
 
-        | (sym('$') + one_of(WHITESPACE).repeat(1..)).collect()
+        // | (sym('$') + one_of(WHITESPACE).repeat(1..)).collect()
+        | (silent_char().opt() * sym('$') + none_of("0123456789*@#?-$!({\"")).collect()
         .map(|a| Vec::from(a))
     ).map(|chars| {
         Span::Literal(String::from_iter(chars.iter()))
@@ -1062,6 +1053,7 @@ fn array_index<'a>() -> Parser<'a, char, Span> {
     * (
         one_of("*@").map(|c| Span::Literal(c.to_string()))
         | expr().map(|expr| Span::ArithExpr {expr:expr})
+        | command_substitution_span()
     )
     - sym(']')
 }
@@ -1119,7 +1111,8 @@ fn compound_list<'a>() -> Parser<'a, char, Vec<Term>> {
 //                  | linebreak term separator
 //                  ;
 fn _compound_list<'a>() -> Parser<'a, char, Vec<Term>> {
-    (linebreak() * term() + separator().opt())
+    // (linebreak() * term() + separator().opt())
+    (term() + separator().opt())
     .map(|(mut terms, bg)| {
         if let Some(bg) = bg {
             if let Some(mut last) = terms.last_mut() {
@@ -1152,9 +1145,7 @@ fn term<'a>() -> Parser<'a, char, Vec<Term>> {
 // subshell         : '(' compound_list ')'
 //                  ;
 fn subshell<'a>() -> Parser<'a, char, Vec<Term>> {
-    sym('(')
-    * compound_list()
-    - sym(')')
+    sym('(') * space() * compound_list() - sym(')').expect(")")
 }
 
 // command_substitution_span = { "$" ~ subshell_group }
@@ -1405,7 +1396,7 @@ fn local_definition<'a>() -> Parser<'a, char, Command> {
 fn function_definition<'a>() -> Parser<'a, char, Command> {
     (
         (
-            (tag("function") * space() * var_name() - tag("()").opt())
+            (tag("function") * space() * var_name() - space() - tag("()").opt())
             | (var_name() - tag("()"))
         )
         - linebreak() + function_body().expect("function body")
@@ -1526,7 +1517,9 @@ fn compound_command<'a>() -> Parser<'a, char, Command> {
     | if_clause()
     | while_clause()
     | for_clause()
-    | sub_shell()
+    | subshell().map(|terms| Command::SubShellGroup {
+        terms: terms
+    })
     | case_clause()
     | condition_clause()
 }
@@ -1578,7 +1571,7 @@ fn case_list_ns<'a>() -> Parser<'a, char, Vec<CaseItem>> {
 fn case_item_ns<'a>() -> Parser<'a, char, CaseItem> {
     (
         (sym('(') * space()).opt()
-        * pattern() - sym(')')
+        * pattern() - sym(')') - linebreak()
         + compound_list().opt() - linebreak().opt()
     ).map(|(patterns, terms)| {
         CaseItem {
@@ -1596,8 +1589,8 @@ fn case_item_ns<'a>() -> Parser<'a, char, CaseItem> {
 fn case_item<'a>() -> Parser<'a, char, CaseItem> {
     (
         space() * (sym('(') * space()).opt()
-        * pattern() - sym(')').expect(")")
-        + compound_list().opt() - linebreak().opt()
+        * pattern() - sym(')').expect(")") - linebreak()
+        - space() + compound_list().opt() - linebreak().opt()
         - space() - tag(";;").expect(";;") - linebreak()
     ).map(|(patterns, terms)| {
         CaseItem {
@@ -1622,7 +1615,7 @@ fn pattern<'a>() -> Parser<'a, char, Vec<Word>> {
 
 fn brace_group<'a>() -> Parser<'a, char, Command> {
     (
-        sym('{')
+        space() * sym('{') * linebreak()
         * compound_list()
         - space() * sym('}').expect("}")
     )
@@ -1669,7 +1662,7 @@ fn for_clause<'a>() -> Parser<'a, char, Command> {
         (
             tag("((") * space() * expr() - sym(';').expect(";") - space()
             + expr() - sym(';').expect(";") - space() + expr()
-            - tag("))").expect("))") - space() - sequential_sep()
+            - tag("))").expect("))") - separator()
             + do_group()
         ).map(|(((init, cond), update), body)| {
             Command::ArithFor {
@@ -1680,7 +1673,7 @@ fn for_clause<'a>() -> Parser<'a, char, Command> {
             }
         })
 
-        | (var_name() - sequential_sep().opt() + do_group())
+        | (var_name() - separator() + do_group())
         .map(|(name, terms)| {
             Command::For {
                 var_name: name,
@@ -1689,7 +1682,7 @@ fn for_clause<'a>() -> Parser<'a, char, Command> {
             }
         })
 
-        | (var_name() - linebreak() - tag("in") - space() + cmd_word().repeat(0..) - sequential_sep() + do_group())
+        | (var_name() - linebreak() - tag("in") - space() + cmd_word().repeat(0..) - separator() + do_group())
         .map(|((name, words), terms)| {
             Command::For {
                 var_name: name,
@@ -1702,7 +1695,7 @@ fn for_clause<'a>() -> Parser<'a, char, Command> {
 
 // do_group         : Do compound_list Done           /* Apply rule 6 */
 fn do_group<'a>() -> Parser<'a, char, Vec<Term>> {
-    space() * tag("do") * compound_list() - space() * tag("done").expect("done")
+    space() * tag("do") * linebreak() * compound_list() - space() * tag("done").expect("done")
 }
 
 // if_clause        : If compound_list Then compound_list else_part Fi
@@ -1710,8 +1703,8 @@ fn do_group<'a>() -> Parser<'a, char, Vec<Term>> {
 //                  ;
 fn if_clause<'a>() -> Parser<'a, char, Command> {
     (
-        tag("if") * compound_list()
-        - space() * tag("then").expect("then") + compound_list()
+        tag("if") * linebreak() * compound_list()
+        - space() * tag("then").expect("then") - linebreak() + compound_list()
         + elif_part().repeat(0..)
         + else_part().opt()
         - space() - tag("fi").expect("fi")
@@ -1728,8 +1721,10 @@ fn if_clause<'a>() -> Parser<'a, char, Command> {
 
 // elif_part = { "elif" ~ compound_list ~ "then" ~ compound_list }
 fn elif_part<'a>() -> Parser<'a, char, ElIf> {
-    (space() * tag("elif") * compound_list() - tag("then").expect("then") + compound_list())
-    .map(|(condition, then_part)| {
+    (
+        space() * tag("elif") * linebreak() * compound_list() -
+        space() - tag("then").expect("then") - linebreak() + compound_list()
+    ).map(|(condition, then_part)| {
         ElIf {
             condition: condition,
             then_part: then_part
@@ -1739,26 +1734,19 @@ fn elif_part<'a>() -> Parser<'a, char, ElIf> {
 
 // else_part = { "else" ~ compound_list }
 fn else_part<'a>() -> Parser<'a, char, Vec<Term>> {
-    space() * tag("else") * compound_list()
+    space() * tag("else") * linebreak() * compound_list()
 }
 
 // while_command = {
 //     "while" ~ compound_list ~ "do" ~ compound_list ~ "done"
 // }
 fn while_clause<'a>() -> Parser<'a, char, Command> {
-    (tag("while") * compound_list() + do_group().expect("do group"))
+    (tag("while") * linebreak() * compound_list() + do_group().expect("do group"))
     .map(|(condition, body)| {
         Command::While {
             condition: condition,
             body: body
         }
-    })
-}
-
-fn sub_shell<'a>() -> Parser<'a, char, Command> {
-    (sym('(') * compound_list() - sym(')'))
-    .map(|terms| Command::SubShellGroup {
-        terms: terms
     })
 }
 
@@ -1771,7 +1759,7 @@ fn pipeline<'a>() -> Parser<'a, char, Pipeline> {
     (command().map(|cmd| Pipeline {
         run_if: RunIf::Always,
         commands: vec![cmd],
-    }) + cmds.repeat(0..))
+    }) - space() + cmds.repeat(0..))
     .map(|(mut pipe, mut cmds)| {
         pipe.commands.append(&mut cmds);
         pipe
@@ -1788,16 +1776,16 @@ fn and_or<'a>() -> Parser<'a, char, Term> {
 
     space() *
     (pipeline() + others.repeat(0..))
-        .map_collect(|(pipe, mut others), input| {
-            let mut pipelines = vec![pipe];
-            pipelines.append(&mut others);
+    .map_collect(|(pipe, mut others), input| {
+        let mut pipelines = vec![pipe];
+        pipelines.append(&mut others);
 
-            Term {
-                code: String::from_iter(input),
-                pipelines: pipelines,
-                background: false,
-            }
-        })
+        Term {
+            code: String::from_iter(input),
+            pipelines: pipelines,
+            background: false,
+        }
+    })
 }
 
 // list             : list separator_op and_or
@@ -1856,7 +1844,7 @@ lazy_static! {
     pub static ref HEREDOC_LINE: Parser<'static, char, Vec<Span>> = _heredoc_line();
 }
 
-pub fn error_convert(input: &str, err: pom::Error) -> ParseError {
+pub fn error_convert(input: &Vec<char>, err: pom::Error) -> ParseError {
     let (message, position) = match err {
         pom::Error::Repeat { ref message, position, .. } => (message.to_string(), position),
         pom::Error::Mismatch { ref message, position } => (message.to_string(), position),
@@ -1866,8 +1854,55 @@ pub fn error_convert(input: &str, err: pom::Error) -> ParseError {
         pom::Error::Incomplete => ("Incomplete".to_string(), input.len()),
     };
 
-    let message = format!("{}\n  |\n  | {}  | {}^---\n  |",
-        message, input, " ".repeat(position)
+    // Search 2 lines earlier from the current location
+    let mut count = 2;
+    let mut begin = position;
+    let mut line_start = position;
+    for i in (0..position).rev() {
+        if input[i] == '\n' {
+            count -= 1;
+            if count == 0 {
+                begin = i + 1;
+                break;
+            }
+        } else if count == 2 {
+            line_start -= 1;
+        }
+    }
+    if count != 0 {
+        begin = 0;
+    }
+
+    // Search after 2 lines from the current location
+    let mut end = position;
+    for i in position .. input.len() {
+        if input[i] == '\n' {
+            end = i;
+            break;
+        }
+    }
+    if end == position {
+        end = input.len();
+    }
+
+    let mut sources = String::new();
+    let mut start = begin;
+    for i in begin .. end {
+        if input[i] == '\n' {
+            sources.push_str("  | ");
+            sources.push_str(&String::from_iter(&input[start .. i]));
+            sources.push('\n');
+            start = i + 1;
+        }
+    }
+    if start < end {
+        sources.push_str("  | ");
+        sources.push_str(&String::from_iter(&input[start .. end]));
+        sources.push('\n');
+    }
+
+    let message = format!("{}\n  |\n{}  | {}^---\n  |",
+        message, sources, " ".repeat(position - line_start)
     );
 
     match err {
@@ -1899,7 +1934,7 @@ impl ShellParser {
         }
 
         match PROGRAM.parse(Arc::new(InputV {
-            input: input
+            input: input.clone()
         })) {
             Ok(ast) => {
                 if ast.terms.len() == 0 {
@@ -1908,7 +1943,7 @@ impl ShellParser {
                     Ok(ast)
                 }
             },
-            Err(err) => Err(error_convert(&script, err))
+            Err(err) => Err(error_convert(&input, err))
         }
     }
 }
@@ -1941,8 +1976,223 @@ macro_rules! param {
 }
 
 #[test]
+fn test_debug() {
+    let parser = ShellParser::new();
+
+    assert_eq!(
+        parser.parse(r#"
+for f in `test -d device && find -L device -maxdepth 4 -name 'vendorsetup.sh' 2> /dev/null | sort` \
+         `test -d vendor && find -L vendor -maxdepth 4 -name 'vendorsetup.sh' 2> /dev/null | sort`
+do
+    echo "including $f"
+    . $f
+done
+        "#),
+        Ok(Ast { terms: vec![] })
+    );
+
+}
+
+#[test]
 fn test_extra() {
     let parser = ShellParser::new();
+
+
+    assert_eq!(
+        parser.parse(r#"
+    while [ ]; do
+        T=`PWD= /bin/pwd`
+        \cd ..
+    done
+        "#),
+        Ok(Ast { terms: vec![Term {
+            code: "while [ ]; do\n        T=`PWD= /bin/pwd`\n        \\cd ..\n    done".into(),
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::While {
+                    condition: vec![Term {
+                        code: "[ ]".into(),
+                        pipelines: vec![Pipeline {
+                            run_if: RunIf::Always,
+                            commands: vec![Command::SimpleCommand {
+                                external: false,
+                                argv: vec![lit!("["), lit!("]")],
+                                redirects: vec![],
+                                assignments: vec![]
+                            }]
+                        }],
+                        background: false
+                    }],
+                    body: vec![Term {
+                        code: "T=`PWD= /bin/pwd`".into(),
+                        pipelines: vec![Pipeline {
+                            run_if: RunIf::Always,
+                            commands: vec![Command::Assignment {
+                                assignments: vec![Assignment {
+                                    name: "T".into(),
+                                    initializer: Initializer::String(Word(vec![Span::Command {
+                                        body: vec![Term {
+                                            code: "PWD= /bin/pwd".into(),
+                                            pipelines: vec![Pipeline {
+                                                run_if: RunIf::Always,
+                                                commands: vec![Command::SimpleCommand {
+                                                    external: false,
+                                                    argv: vec![lit!("/bin/pwd")],
+                                                    redirects: vec![],
+                                                    assignments: vec![Assignment {
+                                                        name: "PWD".into(),
+                                                        initializer: Initializer::String(Word(vec![])),
+                                                        index: None,
+                                                        append: false
+                                                    }]
+                                                }]
+                                            }],
+                                            background: false
+                                        }],
+                                        quoted: false
+                                    }])),
+                                    index: None,
+                                    append: false
+                                }]
+                            }]
+                        }],
+                        background: false
+                    },
+                    Term {
+                        code: "\\cd ..".into(),
+                        pipelines: vec![Pipeline {
+                            run_if: RunIf::Always,
+                            commands: vec![Command::SimpleCommand {
+                                external: true,
+                                argv: vec![lit!("cd"), lit!("..")],
+                                redirects: vec![],
+                                assignments: vec![]
+                            }]
+                        }],
+                        background: false
+                    }]
+                }]
+            }],
+            background: false
+        }] }),
+    );
+
+    assert_eq!(
+        parser.parse(r#"
+        echo "\
+$T/prebuilts/misc/linux-x86/analyzer/tools/scan-build/scan-build \
+--top=$T"
+        "#),
+        Ok(Ast { terms: vec![Term {
+            code: "echo \"\\\n$T/prebuilts/misc/linux-x86/analyzer/tools/scan-build/scan-build \\\n--top=$T\"".into(),
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    external: false,
+                    argv: vec![lit!("echo"), Word(vec![
+                        Span::Literal("\\\n$T".into()),
+                        Span::Literal("/prebuilts/misc/linux-x86/analyzer/tools/scan-build/scan-build --top=".into()),
+                        Span::Parameter {
+                            name: Box::new(Span::Literal("T".into())),
+                            index: None,
+                            op: ExpansionOp::GetOrEmpty,
+                            quoted: true
+                        }])],
+                    redirects: vec![],
+                    assignments: vec![]
+                }]
+            }],
+            background: false
+        }] }),
+    );
+
+    assert_eq!(
+        parser.parse(r#"
+            $(sed -e "s/-.*$//")
+        "#),
+        Ok(Ast { terms: vec![Term {
+            code: "$(sed -e \"s/-.*$//\")".into(),
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    external: false,
+                    argv: vec![Word(vec![Span::Command {
+                        body: vec![Term {
+                            code: "sed -e \"s/-.*$//\"".into(),
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: vec![lit!("sed"), lit!("-e"),
+                                        Word(vec![Span::Literal("s/-.*".to_string()), Span::Literal("$/".to_string()), Span::Literal("/".to_string())])],
+                                    redirects: vec![],
+                                    assignments: vec![]
+                                }]
+                            }],
+                            background: false
+                        }],
+                        quoted: false
+                    }])],
+                    redirects: vec![],
+                    assignments: vec![]
+                }]
+            }],
+            background: false
+        }]})
+    );
+
+
+    assert_eq!(
+        parser.parse("${VARIANT_CHOICES[$(($ANSWER-1))]}"),
+        Ok(Ast { terms: vec![Term {
+            code: "${VARIANT_CHOICES[$(($ANSWER-1))]}".into(),
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    external: false,
+                    argv: vec![Word(vec![Span::Parameter {
+                        name: Box::new(Span::Literal("VARIANT_CHOICES".into())),
+                        index: Some(Box::new(Span::Command {
+                            body: vec![Term {
+                                code: "($ANSWER-1)".into(),
+                                pipelines: vec![Pipeline {
+                                    run_if: RunIf::Always,
+                                    commands: vec![Command::SubShellGroup {
+                                        terms: vec![Term {
+                                            code: "$ANSWER-1".into(),
+                                            pipelines: vec![Pipeline {
+                                                run_if: RunIf::Always,
+                                                commands: vec![Command::SimpleCommand {
+                                                    external: false,
+                                                    argv: vec![Word(vec![Span::Parameter {
+                                                            name: Box::new(Span::Literal("ANSWER".into())),
+                                                            index: None,
+                                                            op: ExpansionOp::GetOrEmpty,
+                                                            quoted: false
+                                                        },
+                                                        Span::Literal("-1".to_string())])],
+                                                    redirects: vec![],
+                                                    assignments: vec![]
+                                                }]
+                                            }],
+                                            background: false
+                                        }]
+                                    }]
+                                }],
+                                background: false
+                            }],
+                            quoted: false
+                        })),
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: false
+                    }])],
+                    redirects: vec![],
+                    assignments: vec![]
+                }]
+            }],
+            background: false
+        }]})
+    );
 
     assert_eq!(
         parser.parse("fish"),
@@ -3085,11 +3335,11 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parser.parse("function func1() { echo hello; echo world; return 3;\n }; func1"),
+        parser.parse("function func1()\n { echo hello; echo world; return 3;\n }; func1"),
         Ok(Ast {
             terms: vec![
                 Term {
-                    code: "function func1() { echo hello; echo world; return 3;\n }".into(),
+                    code: "function func1()\n { echo hello; echo world; return 3;\n }".into(),
                     background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,

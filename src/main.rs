@@ -98,7 +98,7 @@ fn main() -> io::Result<()> {
                     while let Some(arg) = iter.next() {
                         command.push_str(&format!(" {}", arg));
                     }
-                    let status = match shell.run_str(&command) {
+                    let status = match shell.run_str(&command, false) {
                         process::ExitStatus::ExitedWith(status) => status,
                         _ => 1,
                     };
@@ -176,10 +176,10 @@ fn main() -> io::Result<()> {
 
         // Set colorized ls
         #[cfg(target_os = "linux")]
-        shell.run_str("alias ls=\"ls --color\"");
+        shell.run_str("alias ls=\"ls --color\"", false);
 
         #[cfg(target_os = "macos")]
-        shell.run_str("alias ls=\"ls -Gp\"");
+        shell.run_str("alias ls=\"ls -Gp\"", false);
 
         // Init git aliases.
         git::aliases(&mut shell);
@@ -249,7 +249,7 @@ fn main() -> io::Result<()> {
                     multiline.push('\n');
 
                     if trimed.ends_with("\\") == false {
-                        match shell.run_str(&multiline) {
+                        match shell.run_str(&multiline, true) {
                             process::ExitStatus::Expected => {},
                             _ => {
                                 multiline = String::new();

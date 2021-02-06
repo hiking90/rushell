@@ -578,7 +578,7 @@ fn shell_execv(shell: &mut Shell,
                 let mut script = String::new();
                 f.read_to_string(&mut script).unwrap();
                 shell.set_interactive(false);
-                if let ExitStatus::ExitedWith(status) = shell.run_str(script.as_str()) {
+                if let ExitStatus::ExitedWith(status) = shell.run_str(script.as_str(), false) {
                     std::process::exit(status);
                 } else {
                     std::process::exit(1);

@@ -290,7 +290,7 @@ use crate::shell;
 fn test_expand_param() -> Result<()> {
     let mut shell = shell::Shell::new();
 
-    shell.run_str("BB=( Arch Ubuntu Fedora Suse )");
+    shell.run_str("BB=( Arch Ubuntu Fedora Suse )", false);
 
     assert_eq!(
         expand_param(&mut shell, "BB", Some(Index::Position(1)), &ExpansionOp::GetOrEmpty)?,
@@ -478,7 +478,7 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
 fn test_expand_span_into_vec() -> Result<()> {
     let mut shell = shell::Shell::new();
 
-    shell.run_str("BB=( Arch Ubuntu Fedora Suse )");
+    shell.run_str("BB=( Arch Ubuntu Fedora Suse )", false);
 
     assert_eq!(
         expand_span_into_vec(&mut shell,

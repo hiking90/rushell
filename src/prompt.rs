@@ -279,7 +279,7 @@ impl PromptCommand {
 impl Prompt for PromptCommand {
     fn main(&mut self, shell: &mut shell::Shell, _condition: &Condition) -> String {
         let (pipe_in, pipe_out) = pipe().expect("failed to create a pipe for PROMPT_COMMAND");
-        let _status = shell.run_str_with_stdio(&self.command, 0, pipe_out, 2);
+        let _status = shell.run_str_with_stdio(&self.command, false, 0, pipe_out, 2);
         close(pipe_out).ok();
 
         let mut prompt = String::new();
