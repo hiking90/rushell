@@ -537,12 +537,16 @@ fn expr_span<'a>() -> Parser<'a, char, Span> {
 
 // backtick_span = !{ "`" ~ compound_list ~ "`" }
 fn backtick_span<'a>() -> Parser<'a, char, Span> {
-    (sym('`') * compound_list().name("backtick compound list") - sym('`').expect("`"))
-    .map(|cmd| {
-        Span::Command {
+    (sym('`') * none_of("`").repeat(0..) - sym('`').expect("`"))
+    .custom_parser(|chars, _, end| {
+        let cmd = compound_list().parse(Arc::new(InputV {
+            input: chars
+        }))?;
+
+        Ok((Span::Command {
             body: cmd,
             quoted: false,
-        }
+        }, end))
     })
 }
 
@@ -1682,7 +1686,7 @@ fn for_clause<'a>() -> Parser<'a, char, Command> {
             }
         })
 
-        | (var_name() - linebreak() - tag("in") - space() + cmd_word().repeat(0..) - separator() + do_group())
+        | (var_name() - linebreak() - tag("in") + (space() * cmd_word()).repeat(0..) - separator() + do_group())
         .map(|((name, words), terms)| {
             Command::For {
                 var_name: name,
@@ -1754,12 +1758,12 @@ fn while_clause<'a>() -> Parser<'a, char, Command> {
 //                  | pipe_sequence '|' linebreak command
 //                  ;
 fn pipeline<'a>() -> Parser<'a, char, Pipeline> {
-    let cmds = sym('|') * linebreak() * command();
+    let cmds = space() * sym('|') * linebreak() * command();
 
     (command().map(|cmd| Pipeline {
         run_if: RunIf::Always,
         commands: vec![cmd],
-    }) - space() + cmds.repeat(0..))
+    }) + cmds.repeat(0..))
     .map(|(mut pipe, mut cmds)| {
         pipe.commands.append(&mut cmds);
         pipe
@@ -1771,7 +1775,7 @@ fn pipeline<'a>() -> Parser<'a, char, Pipeline> {
 //                  | and_or OR_IF  linebreak pipeline
 //                  ;
 fn and_or<'a>() -> Parser<'a, char, Term> {
-    let others = ((tag("||").map(|_| RunIf::Failure) | tag("&&").map(|_| RunIf::Success)) - linebreak() + pipeline())
+    let others = space() * ((tag("||").map(|_| RunIf::Failure) | tag("&&").map(|_| RunIf::Success)) - linebreak() + pipeline())
         .map(|(run_if, mut pipe)| { pipe.run_if = run_if; pipe } );
 
     space() *
@@ -1977,6 +1981,12 @@ macro_rules! param {
 
 #[test]
 fn test_debug() {
+    // let parser = ShellParser::new();
+
+}
+
+#[test]
+fn test_extra() {
     let parser = ShellParser::new();
 
     assert_eq!(
@@ -1988,15 +1998,118 @@ do
     . $f
 done
         "#),
-        Ok(Ast { terms: vec![] })
+        Ok(Ast { terms: vec![Term {
+            code: "for f in `test -d device && find -L device -maxdepth 4 -name \'vendorsetup.sh\' 2> /dev/null | sort` \\\n         `test -d vendor && find -L vendor -maxdepth 4 -name \'vendorsetup.sh\' 2> /dev/null | sort`\ndo\n    echo \"including $f\"\n    . $f\ndone".into(),
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::For {
+                    var_name: "f".to_string(),
+                    words: vec![Word(vec![Span::Command {
+                        body: vec![Term {
+                            code: "test -d device && find -L device -maxdepth 4 -name \'vendorsetup.sh\' 2> /dev/null | sort".into(),
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: vec![lit!("test"), lit!("-d"), lit!("device")],
+                                    redirects: vec![],
+                                    assignments: vec![]
+                                }]
+                            }, Pipeline {
+                                run_if: RunIf::Success,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: vec![lit!("find"), lit!("-L"), lit!("device"), lit!("-maxdepth"), lit!("4"), lit!("-name"), lit!("vendorsetup.sh")],
+                                    redirects: vec![Redirection {
+                                        fd: 2,
+                                        direction: RedirectionDirection::Output,
+                                        target: RedirectionType::File(lit!("/dev/null"))
+                                    }],
+                                    assignments: vec![]
+                                }, Command::SimpleCommand {
+                                    external: false,
+                                    argv: vec![lit!("sort")],
+                                    redirects: vec![],
+                                    assignments: vec![]
+                                }]
+                            }],
+                            background: false
+                        }],
+                        quoted: false
+                    }]), Word(vec![Span::Command {
+                        body: vec![Term {
+                            code: "test -d vendor && find -L vendor -maxdepth 4 -name \'vendorsetup.sh\' 2> /dev/null | sort".to_string(),
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    external: false,
+                                    argv: vec![lit!("test"), lit!("-d"), lit!("vendor")],
+                                    redirects: vec![],
+                                    assignments: vec![]
+                                }] }, Pipeline {
+                                    run_if: RunIf::Success,
+                                    commands: vec![Command::SimpleCommand {
+                                        external: false,
+                                        argv: vec![lit!("find"), lit!("-L"), lit!("vendor"), lit!("-maxdepth"), lit!("4"), lit!("-name"), lit!("vendorsetup.sh")],
+                                        redirects: vec![Redirection {
+                                            fd: 2,
+                                            direction: RedirectionDirection::Output,
+                                            target: RedirectionType::File(lit!("/dev/null"))
+                                        }],
+                                        assignments: vec![]
+                                    }, Command::SimpleCommand {
+                                        external: false,
+                                        argv: vec![lit!("sort")],
+                                        redirects: vec![],
+                                        assignments: vec![]
+                                    }]
+                                }],
+                                background: false
+                            }],
+                            quoted: false
+                        }])],
+                    body: vec![Term {
+                        code: "echo \"including $f\"".into(),
+                        pipelines: vec![Pipeline {
+                            run_if: RunIf::Always,
+                            commands: vec![Command::SimpleCommand {
+                                external: false,
+                                argv: vec![lit!("echo"),
+                                    Word(vec![Span::Literal("including ".into()),
+                                        Span::Parameter {
+                                            name: Box::new(Span::Literal("f".into())),
+                                            index: None,
+                                            op: ExpansionOp::GetOrEmpty,
+                                            quoted: true
+                                        }])],
+                                redirects: vec![],
+                                assignments: vec![]
+                            }]
+                        }],
+                        background: false
+                    }, Term {
+                        code: ". $f".to_string(),
+                        pipelines: vec![Pipeline {
+                            run_if: RunIf::Always,
+                            commands: vec![Command::SimpleCommand {
+                                external: false,
+                                argv: vec![lit!("."), Word(vec![Span::Parameter {
+                                    name: Box::new(Span::Literal("f".into())),
+                                    index: None,
+                                    op: ExpansionOp::GetOrEmpty,
+                                    quoted: false
+                                }])],
+                                redirects: vec![],
+                                assignments: vec![]
+                            }]
+                        }],
+                        background: false
+                    }]
+                }]
+            }],
+            background: false
+        }] })
     );
-
-}
-
-#[test]
-fn test_extra() {
-    let parser = ShellParser::new();
-
 
     assert_eq!(
         parser.parse(r#"
