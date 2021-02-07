@@ -46,6 +46,8 @@ pub fn wait_child(pid: Pid) -> Result<i32> {
     }
 }
 
+pub const EXIT_STATUS_CTRL_C: ExitStatus = ExitStatus::ExitedWith(130); // Defined it by bash.
+
 /// The exit status or reason why the command exited.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ExitStatus {

@@ -271,6 +271,10 @@ fn run_local_command(
         Ok(ExitStatus::ExitedWith(1))
     } else {
         for decl in declarations {
+            if CTRLC.load(Ordering::Relaxed) == true {
+                return Ok(EXIT_STATUS_CTRL_C);
+            }
+
             match decl {
                 LocalDeclaration::Assignment(Assignment {
                     name, initializer, index: _, append,
@@ -360,6 +364,13 @@ fn run_case_command(
     Ok(ExitStatus::ExitedWith(0))
 }
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc};
+
+lazy_static! {
+    pub static ref CTRLC: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+}
+
 fn run_while_command(
     shell: &mut Shell,
     ctx: &Context,
@@ -368,6 +379,10 @@ fn run_while_command(
 ) -> Result<ExitStatus> {
     let mut last_result = ExitStatus::ExitedWith(0);
     loop {
+        if CTRLC.load(Ordering::Relaxed) == true {
+            last_result = EXIT_STATUS_CTRL_C;
+            break;
+        }
         let result = run_terms(shell, condition, ctx.stdin, ctx.stdout, ctx.stderr);
         if result != ExitStatus::ExitedWith(0) {
             break;
@@ -390,6 +405,10 @@ fn run_for_command(
         let expanded_words = expand_word_into_vec(shell, unexpanded_word, &shell.ifs())?;
         for pattern_word in expanded_words {
             for value in pattern_word.expand_glob()? {
+                if CTRLC.load(Ordering::Relaxed) == true {
+                    return Ok(EXIT_STATUS_CTRL_C);
+                }
+
                 shell.set(&var_name, Value::String(value), true);
 
                 let result = run_terms(shell, body, ctx.stdin, ctx.stdout, ctx.stderr);
@@ -417,6 +436,9 @@ fn run_arith_for_command(
     evaluate_expr(shell, init);
 
     'for_loop: while evaluate_expr(shell, cond) == 1 {
+        if CTRLC.load(Ordering::Relaxed) == true {
+            return Ok(EXIT_STATUS_CTRL_C);
+        }
         let result = run_terms(shell, body, ctx.stdin, ctx.stdout, ctx.stderr);
         match result {
             ExitStatus::Break => break 'for_loop,
@@ -642,6 +664,11 @@ fn run_pipeline(
     let mut stdin = pipeline_stdin;
     let mut pgid = None;
     while let Some(command) = iter.next() {
+        if CTRLC.load(Ordering::Relaxed) == true {
+            last_result = Some(EXIT_STATUS_CTRL_C);
+            break;
+        }
+
         let stdout;
         let pipes = if iter.peek().is_some() {
             // There is a next command in the pipeline (e.g. date in
@@ -810,6 +837,10 @@ pub fn run_terms(
     for term in terms {
         // println!("{:?}", term);
         for pipeline in &term.pipelines {
+            if CTRLC.load(Ordering::Relaxed) == true {
+                last_status = EXIT_STATUS_CTRL_C;
+                break;
+            }
             // Should we execute the pipline?
             match (last_status, &pipeline.run_if) {
                 (ExitStatus::ExitedWith(0), RunIf::Success) => (),

@@ -11,6 +11,7 @@ extern crate log;
 extern crate structopt;
 extern crate whoami;
 extern crate regex;
+extern crate signal_hook;
 
 // #[cfg(test)]
 // extern crate test;
@@ -49,6 +50,7 @@ use std::io;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{Ordering};
 
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 const PROMPT_STYLE: &str = "PROMPT_STYLE";
@@ -151,6 +153,8 @@ fn main() -> io::Result<()> {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
+    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&eval::CTRLC))?;
+
     let mut prompt_style = String::from("basic");
     let mut prompt_command = None;
 
@@ -223,6 +227,8 @@ fn main() -> io::Result<()> {
             };
             interface.set_prompt(&prompt_display).ok();
         }
+
+        eval::CTRLC.store(false, Ordering::Relaxed);
 
         let readline = interface.read_line()?;
 

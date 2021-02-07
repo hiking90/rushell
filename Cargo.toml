@@ -28,6 +28,7 @@ chrono = "0.4"
 # pom = { path = "../pom", version = "3"}
 pom = { version = "3", git = "https://github.com/hiking90/pom" }
 err-derive = "0"
+signal-hook = "0.3"
 
 [dependencies.regex]
 version = "1"
