@@ -477,14 +477,10 @@ impl Shell {
                 // Just ignore.
                 ExitStatus::ExitedWith(0)
             }
-            Err(parser::ParseError::Expected(_err)) => {
-                if interactive {
-                    ExitStatus::Expected
-                } else {
-                    print_err!("parse error: {}", _err);
-                    ExitStatus::ExitedWith(-1)
-                }
+            Err(parser::ParseError::Expected(_err)) if interactive => {
+                ExitStatus::Expected
             }
+            Err(parser::ParseError::Expected(err)) |
             Err(parser::ParseError::Fatal(err)) => {
                 print_err!("parse error: {}", err);
                 ExitStatus::ExitedWith(-1)
