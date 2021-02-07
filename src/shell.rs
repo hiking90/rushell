@@ -478,10 +478,10 @@ impl Shell {
                 ExitStatus::ExitedWith(0)
             }
             Err(parser::ParseError::Expected(_err)) => {
-                print_err!("parse error: {}", _err);
                 if interactive {
                     ExitStatus::Expected
                 } else {
+                    print_err!("parse error: {}", _err);
                     ExitStatus::ExitedWith(-1)
                 }
             }
