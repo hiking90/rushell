@@ -244,5 +244,17 @@ mod tests {
         );
 
         assert_eq!(pattern_word_match(&pat, "12x3456789__", false), None);
+
+        let pat = PatternWord::new(vec!["*bash*".to_owned()]);
+        assert_eq!(
+            pattern_word_match(&pat, "COMMANDtarget/debug/rushell", false),
+            None
+        );
+
+        let pat = PatternWord::new(vec!["*".to_owned()]);
+        assert_eq!(
+            pattern_word_match(&pat, "COMMANDtarget/debug/rushell", true),
+            Some(MatchResult { start: 0, end: 27 })
+        );
     }
 }

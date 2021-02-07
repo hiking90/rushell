@@ -141,9 +141,13 @@ fn path_span<'a>() -> Parser<'a, char, (Vec<String>, bool)> {
     })
 }
 
+lazy_static! {
+    pub static ref PATH_SPAN: Parser<'static, char, (Vec<String>, bool)> = path_span();
+}
+
 fn parse_glob(glob: &str) -> Option<(Vec<String>, bool)> {
     let input: Vec<char> = glob.chars().collect();
-    path_span().parse(Arc::new(InputV { input: input.to_vec() })).ok()
+    PATH_SPAN.parse(Arc::new(InputV { input: input.to_vec() })).ok()
 }
 
 
@@ -183,6 +187,10 @@ fn visit_dirs(path: &Path, strip: bool, depth: usize, file_regex: &Regex, dir_re
 }
 
 pub fn glob_to_regex(glob: &str, match_all: bool) -> Option<(Regex, Regex, bool)> {
+    if glob == "*" {
+        return Some((Regex::new(".*").ok()?, Regex::new(".*").ok()?, true));
+    }
+
     match parse_glob(&glob) {
         Some((mut patterns, has_pattern)) => {
             // println!("glob_to_regex - {:?}", patterns);
