@@ -243,17 +243,15 @@ fn run_simple_command(
         }
     }
     // Internal commands
-    if external == false {
-        let result = run_internal_command(shell, &argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects);
-        match result {
-            Ok(status) => return Ok(status),
-            Err(err) => {
-                // match err.find_root_cause().downcast_ref::<InternalCommandError>() {
-                match err.downcast_ref::<InternalCommandError>() {
-                    Some(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
-                    Some(InternalCommandError::NotFound) => (), /* Try external command. */
-                    _ => return Err(err),
-                }
+    let result = run_internal_command(shell, &argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects);
+    match result {
+        Ok(status) => return Ok(status),
+        Err(err) => {
+            // match err.find_root_cause().downcast_ref::<InternalCommandError>() {
+            match err.downcast_ref::<InternalCommandError>() {
+                Some(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
+                Some(InternalCommandError::NotFound) => (), /* Try external command. */
+                _ => return Err(err),
             }
         }
     }

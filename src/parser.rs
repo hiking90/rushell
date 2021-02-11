@@ -363,16 +363,30 @@ pub fn reserved_word<'a>() -> Parser<'a, char, ()> {
     | tag("then")
     | tag("while")
     | tag("[[")
-    ) * (!word_char("")).discard()
+    ) * (!word_char(WordType::CmdWord)).discard()
 }
 
 enum WordType {
     CmdName,
     CmdWord,
+    Pattern
 }
 
-fn word_char<'a>(dynot: &'static str) -> Parser<'a, char, char> {
-    !one_of(dynot) * none_of("${}|&;()<>` \t\r\n\"")
+fn word_char<'a>(word_type: WordType) -> Parser<'a, char, char> {
+    match word_type {
+        WordType::CmdName => {
+            !one_of("=") * none_of("${}|&;()<>` \t\r\n\"")
+        }
+        WordType::CmdWord => {
+            none_of("${}|&;()<>` \t\r\n\"")
+        }
+        WordType::Pattern => {
+            none_of("${}()` \t\r\n\"")
+        }
+    }
+
+
+    // !one_of(dynot) * none_of("${}|&;()<>` \t\r\n\"")
     // !one_of("|&; \t\r\n\"") * !one_of(dynot) * any()
 }
 
@@ -462,8 +476,8 @@ fn command_span<'a>() -> Parser<'a, char, Span> {
     })
 }
 
-fn literal_span<'a>(dynot: &'static str) -> Parser<'a, char, Vec<Span>> {
-    (silent_char().opt() * (escape_sequence() | word_char(dynot))).repeat(1..)
+fn literal_span<'a>(word_type: WordType) -> Parser<'a, char, Vec<Span>> {
+    (silent_char().opt() * (escape_sequence() | word_char(word_type))).repeat(1..)
     .map(|chars| {
 
         // Tilde parser is implemented from scratch because of performance concern.
@@ -568,18 +582,13 @@ fn proc_subst_span<'a>() -> Parser<'a, char, Span> {
 
 // brace_literal_span = { "{" ~ literal_span ~ "}" }
 fn brace_literal_span<'a>() -> Parser<'a, char, Span> {
-    (sym('{') + literal_span("") + sym('}').expect("}")).collect()
+    (sym('{') + literal_span(WordType::CmdWord) + sym('}').expect("}")).collect()
     .map(|chars| {
         Span::Literal(String::from_iter(chars))
     })
 }
 
 fn word<'a>(word_type: WordType) -> Parser<'a, char, Word> {
-    let not_set = match word_type {
-        WordType::CmdName => "=",
-        WordType::CmdWord => "",
-    };
-
     !sym('#') *     // Add this to detect comment
     (
         double_quoted_span() |
@@ -594,7 +603,7 @@ fn word<'a>(word_type: WordType) -> Parser<'a, char, Word> {
             | proc_subst_span()
             | brace_literal_span()
         ).map(|span| vec![span])
-        | literal_span(not_set)
+        | literal_span(word_type)
     ).repeat(1..)
     .map(|spans| {
         Word(spans.into_iter().flatten().collect())
@@ -935,7 +944,7 @@ fn _param_ex_span<'a>() -> Parser<'a, char, Span> {
                 | tag(":+")
                 | tag("+")
             )
-            + word(WordType::CmdWord)
+            + word(WordType::Pattern)
         )
         .map(|(((name, idx), op), word)|{
             Span::Parameter {
@@ -1981,7 +1990,58 @@ macro_rules! param {
 
 #[test]
 fn test_debug() {
-    // let parser = ShellParser::new();
+    let parser = ShellParser::new();
+
+    assert_eq!(
+        parser.parse(r#"
+case "$PROMPT_COMMAND" in
+    *) PROMPT_COMMAND="${PROMPT_COMMAND:+${PROMPT_COMMAND};}__zoxide_hook" ;;
+esac
+        "#),
+        Ok(Ast { terms: vec![Term {
+            code: "case \"$PROMPT_COMMAND\" in\n    *) PROMPT_COMMAND=\"${PROMPT_COMMAND:+${PROMPT_COMMAND};}__zoxide_hook\" ;;\nesac".into(),
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::Case {
+                    word: Word(vec![Span::Parameter {
+                        name: Box::new(Span::Literal("PROMPT_COMMAND".into())),
+                        index: None,
+                        op: ExpansionOp::GetOrEmpty,
+                        quoted: true
+                    }]),
+                    cases: vec![CaseItem {
+                        patterns: vec![lit!("*")],
+                        body: vec![Term {
+                            code: "PROMPT_COMMAND=\"${PROMPT_COMMAND:+${PROMPT_COMMAND};}__zoxide_hook\" ".into(),
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::Assignment {
+                                    assignments: vec![Assignment {
+                                        name: "PROMPT_COMMAND".into(),
+                                        initializer: Initializer::String(Word(vec![Span::Parameter {
+                                            name: Box::new(Span::Literal("PROMPT_COMMAND".into())),
+                                            index: None,
+                                            op: ExpansionOp::GetOrAction(":+".into(), Word(vec![Span::Parameter {
+                                                name: Box::new(Span::Literal("PROMPT_COMMAND".into())),
+                                                index: None,
+                                                op: ExpansionOp::GetOrEmpty,
+                                                quoted: false
+                                            }, Span::Literal(";".into())])),
+                                            quoted: true
+                                        }, Span::Literal("__zoxide_hook".into())])),
+                                        index: None,
+                                        append: false
+                                    }]
+                                }]
+                            }],
+                            background: false
+                        }]
+                    }]
+                }]
+            }],
+            background: false
+        }] })
+    );
 
 }
 

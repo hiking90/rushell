@@ -8,6 +8,8 @@ use structopt::StructOpt;
 struct Opt {
     #[structopt(short = "f")]
     function: bool,
+    #[structopt(short = "v")]
+    variable: bool,
     #[structopt(name = "NAME")]
     name: String,
 }
