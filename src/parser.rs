@@ -1990,6 +1990,12 @@ macro_rules! param {
 
 #[test]
 fn test_debug() {
+    // let parser = ShellParser::new();
+
+}
+
+#[test]
+fn test_extra() {
     let parser = ShellParser::new();
 
     assert_eq!(
@@ -2042,12 +2048,6 @@ esac
             background: false
         }] })
     );
-
-}
-
-#[test]
-fn test_extra() {
-    let parser = ShellParser::new();
 
     assert_eq!(
         parser.parse(r#"

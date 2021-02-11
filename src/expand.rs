@@ -72,11 +72,11 @@ fn param_get_or_action(
                 v
             } else if op == ":-" {
                 vec![word]
-            } else if op == ";=" {
+            } else if op == ":=" {
                 shell.set(name, Value::String(word.clone()), false);
                 vec![word]
             } else {
-                return Err(Error::Message(format!("unsupported expansion operator `{}'", op)).into());
+                return Err(Error::Message(format!("unsupported expansion operator `{}`", op)).into());
             }
         }
 
@@ -88,7 +88,7 @@ fn param_get_or_action(
                     vec![word]
                 }
                 _ => {
-                    return Err(Error::Message(format!("unsupported expansion operator `{}'", op)).into());
+                    return Err(Error::Message(format!("unsupported expansion operator `{}`", op)).into());
                 }
             }
         }
@@ -263,8 +263,15 @@ fn expand_param(
                     shell.set(name, Value::String(content.clone()), false);
                     Ok(vec![content])
                 }
+                ":+" => {
+                    if let Some(_) = shell.get(name) {
+                        expand_word_into_string(shell, word).map(|s| vec![s])
+                    } else {
+                        Ok(vec![])
+                    }
+                }
                 _ => {
-                    return Err(Error::Message(format!("unsupported expansion operator `{}'", op)).into());
+                    return Err(Error::Message(format!("3 unsupported expansion operator `{}`", op)).into());
                 }
             }
         }

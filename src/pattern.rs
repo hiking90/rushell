@@ -78,12 +78,10 @@ fn pattern_word_match(pattern: &PatternWord, text: &str, match_all: bool) -> Opt
     match regex {
         Some(re) => {
             if let Some(res) = re.find(text) {
-                if res.start() < res.end() {
-                    return Some(MatchResult{
-                        start: res.start(),
-                        end: res.end(),
-                    });
-                }
+                return Some(MatchResult{
+                    start: res.start(),
+                    end: res.end(),
+                });
             } else {
                 // println!("{:?}", re);
             }
@@ -188,7 +186,7 @@ mod tests {
             vec!["*".to_owned()],
         );
 
-        assert_eq!(pattern_word_match(&pat, "", true), None,);
+        assert_eq!(pattern_word_match(&pat, "", true), Some(MatchResult { start: 0, end: 0 }),);
 
         assert_eq!(
             pattern_word_match(&pat, "x", true),

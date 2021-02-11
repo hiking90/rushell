@@ -241,6 +241,7 @@ fn main() -> io::Result<()> {
                     // To support "!command" feature.
                     let line = if trimed.starts_with("!") == true {
                         if let Some(cmd) = shell.history_starts_with(&trimed[1..]) {
+                            println!("{}", cmd);
                             cmd
                         } else {
                             print_err!("Can't find \'{}\'", trimed);
