@@ -221,6 +221,7 @@ impl Shell {
             // $PATH is being updated. Reload directories.
             if let Value::String(ref path) = value {
                 std::env::set_var("PATH", path);
+                self.scan_commands();   // When PATH is updated in a script, the updated PATH should be scanned immediately.
             }
         }
     }

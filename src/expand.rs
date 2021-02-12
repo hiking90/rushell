@@ -410,7 +410,8 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
             if output.is_empty() {
                 Ok((vec![], !quoted))
             } else {
-                Ok((vec![output], !quoted))
+                // The output should be treated a literal. If true is returned, "cmd 3" string will be splitted "cmd" and "3".
+                Ok((vec![output], false))
             }
         }
         Span::ProcSubst { body, subst_type } => {
@@ -419,10 +420,12 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
                 // <()
                 ProcSubstType::StdoutToFile => {
                     let file_name = format!("/dev/fd/{}", stdout);
+                    nix::unistd::close(stdout).ok();
                     Ok((vec![file_name], false))
                 }
                 // >()
                 ProcSubstType::FileToStdin => {
+                    nix::unistd::close(stdout).ok();
                     // TODO:
                     unimplemented!();
                 }
@@ -647,7 +650,7 @@ pub fn expand_words(shell: &mut Shell, words: &[Word]) -> Result<Vec<String>> {
             }
         }
 
-        evaluated.append(&mut ws);
+        evaluated.push(ws.join(""));
     }
 
     Ok(evaluated)

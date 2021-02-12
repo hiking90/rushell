@@ -1990,8 +1990,14 @@ macro_rules! param {
 
 #[test]
 fn test_debug() {
-    // let parser = ShellParser::new();
+//     let parser = ShellParser::new();
 
+//     assert_eq!(
+//         parser.parse(r#"
+// export PATH=$PATH:`pwd`/test
+//         "#),
+//         Ok(Ast { terms: vec![] }),
+//     );
 }
 
 #[test]
