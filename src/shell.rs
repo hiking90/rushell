@@ -497,16 +497,15 @@ impl Shell {
         let (pipe_in, pipe_out) = pipe().expect("failed to create a pipe");
 
         let status = self.run_str_with_stdio(script, false, 0, pipe_out, 2);
-        assert_eq!(status, process::ExitStatus::ExitedWith(0));
         close(pipe_out).ok();
 
         let mut output = String::new();
-        unsafe {
-            let mut file = File::from_raw_fd(pipe_in);
-            file.read_to_string(&mut output).ok();
+        if status == process::ExitStatus::ExitedWith(0) {
+            unsafe {
+                let mut file = File::from_raw_fd(pipe_in);
+                file.read_to_string(&mut output).ok();
+            }
         }
-
-        close(pipe_in).ok();
 
         (status, output)
     }
