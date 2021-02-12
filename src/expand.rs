@@ -5,9 +5,7 @@ use crate::shell::Shell;
 use crate::variable::Value;
 use crate::utils::{home_dir_for_user, Result, Error};
 use crate::variable;
-use std::fs::File;
 use std::io::prelude::*;
-use std::os::unix::io::FromRawFd;
 
 /// TODO: Aliases should be expanded in the parser in order to support
 /// compound lists, e.g. alias cowsay-or-echo="cowsay hi || echo hi".
@@ -393,10 +391,10 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
             Ok((vec![home_dir], false))
         }
         Span::Command { body, quoted } => {
-            let (_, stdout) = eval_in_subshell(shell, body)?;
+            let (_, mut stdout) = eval_in_subshell(shell, body)?;
 
             let mut raw_stdout = Vec::new();
-            unsafe { File::from_raw_fd(stdout).read_to_end(&mut raw_stdout).ok() };
+            stdout.read_to_end(&mut raw_stdout).ok();
 
             let output = std::str::from_utf8(&raw_stdout)
                 .map_err(|err| {
@@ -415,17 +413,16 @@ fn expand_span_into_vec(shell: &mut Shell, span: &Span) -> Result<(Vec<String>, 
             }
         }
         Span::ProcSubst { body, subst_type } => {
+            use std::os::unix::io::AsRawFd;
             let (_, stdout) = eval_in_subshell(shell, body)?;
             match subst_type {
                 // <()
                 ProcSubstType::StdoutToFile => {
-                    let file_name = format!("/dev/fd/{}", stdout);
-                    nix::unistd::close(stdout).ok();
+                    let file_name = format!("/dev/fd/{}", stdout.as_raw_fd());
                     Ok((vec![file_name], false))
                 }
                 // >()
                 ProcSubstType::FileToStdin => {
-                    nix::unistd::close(stdout).ok();
                     // TODO:
                     unimplemented!();
                 }

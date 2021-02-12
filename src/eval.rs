@@ -550,7 +550,7 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
 }
 
 /// Runs commands in a subshell (`$()` or `<()`).
-pub fn eval_in_subshell(shell: &mut Shell, terms: &[parser::Term]) -> Result<(i32, i32)> {
+pub fn eval_in_subshell(shell: &mut Shell, terms: &[parser::Term]) -> Result<(i32, File)> {
     let (pipe_out, pipe_in) = pipe().expect("failed to create a pipe");
 
     let ctx = Context {
@@ -565,7 +565,9 @@ pub fn eval_in_subshell(shell: &mut Shell, terms: &[parser::Term]) -> Result<(i3
     let pid = spawn_subshell(shell, terms, &ctx)?;
     close(pipe_in).ok();
     let status = wait_child(pid).unwrap_or(1);
-    Ok((status, pipe_out))
+    unsafe {
+        Ok((status, File::from_raw_fd(pipe_out)))
+    }
 }
 
 pub fn eval_completion_function(shell: &mut Shell, name: &str, line: &str, words: Vec<String>, current: usize) -> Vec<String> {
