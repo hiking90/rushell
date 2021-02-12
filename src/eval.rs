@@ -314,7 +314,7 @@ fn run_if_command(
         let result = run_terms(shell, &elif.condition, ctx.stdin, ctx.stdout, ctx.stderr);
         if result == ExitStatus::ExitedWith(0) {
             return Ok(run_terms(
-                shell, then_part, ctx.stdin, ctx.stdout, ctx.stderr,
+                shell, &elif.then_part, ctx.stdin, ctx.stdout, ctx.stderr,
             ));
         }
     }
