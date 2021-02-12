@@ -303,76 +303,105 @@ fn is_readonly(path: &Path) -> bool {
     false
 }
 
-fn parse_ps1(shell: &shell::Shell, condition: &Condition) -> String {
+fn parse_ps1(shell: &mut shell::Shell, condition: &Condition) -> String {
     use chrono::{Local, DateTime};
 
     let ps1 = shell.get_str("PS1").unwrap_or(String::new());
-
     let mut res = String::new();
-    let mut backslash = false;
-    let mut buf = String::new();
-    let mut is_buffering = false;
 
-    for ch in ps1.chars() {
-        if backslash == false {
-            if ch == '\\' {
-                backslash = true;
-            } else {
-                res.push(ch);
-            }
-        } else {
-            backslash = false;
-            match ch {
-                'd' => {
-                    let dt: DateTime<Local> = Local::now();
-                    res += &dt.format("%a %h %e").to_string();
-                }
-                't' => {
-                    let dt: DateTime<Local> = Local::now();
-                    res += &dt.format("%X").to_string();
-                }
-                'T' => {
-                    let dt: DateTime<Local> = Local::now();
-                    res += &dt.format("%T").to_string();
-                }
-                '@' => {
-                    let dt: DateTime<Local> = Local::now();
-                    res += &dt.format("%r").to_string();
-                }
-                'A' => {
-                    let dt: DateTime<Local> = Local::now();
-                    res += &dt.format("%R").to_string();
-                }
-                '[' => { is_buffering = true; }
-                ']' => {
-                    if is_buffering == true && buf.is_empty() == false {
-                        res += &format!("\x01{}\x02", buf);
-                        buf = String::new();
+    let mut chars = ps1.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => {
+                if let Some(ch) = chars.next() {
+                    match ch {
+                        'd' => {
+                            let dt: DateTime<Local> = Local::now();
+                            res += &dt.format("%a %h %e").to_string();
+                        }
+                        't' => {
+                            let dt: DateTime<Local> = Local::now();
+                            res += &dt.format("%X").to_string();
+                        }
+                        'T' => {
+                            let dt: DateTime<Local> = Local::now();
+                            res += &dt.format("%T").to_string();
+                        }
+                        '@' => {
+                            let dt: DateTime<Local> = Local::now();
+                            res += &dt.format("%r").to_string();
+                        }
+                        'A' => {
+                            let dt: DateTime<Local> = Local::now();
+                            res += &dt.format("%R").to_string();
+                        }
+                        '[' => {
+                            let mut buf = String::new();
+                            while let Some(ch) = chars.next() {
+                                if ch == ']' {
+                                    res += &format!("\x01{}\x02", buf);
+                                    buf = String::new();
+                                    break;
+                                } else {
+                                    buf.push(ch);
+                                }
+                            }
+                            if buf.len() > 0 {      // If there is no ']', all buffered chars are append "res" as a normal char.
+                                res += &buf;
+                            }
+                        }
+                        'H' |
+                        'h' => res += &condition.host,
+                        'u' => res += &condition.user,
+                        's' => res += utils::SHELL_NAME,
+                        'n' => res.push('\n'),
+                        'r' => res.push('\r'),
+                        '\\' => res.push('\\'),
+                        'V' | 'v' => res += env!("CARGO_PKG_VERSION"),
+
+                        '$' => if nix::unistd::getuid().is_root() {
+                                res.push('#')
+                            } else {
+                                res.push('$')
+                            }
+
+                        // Not supported.
+                        // 'e' | 'j' | 'l' | 'w' | 'W' | '!' | '#' | 'D' => {}
+                        _ => {
+                            res.push('\\');
+                            res.push(ch);
+                        }
                     }
-                    is_buffering = false;
+                } else {
+                    res.push('\\')
                 }
-                'H' |
-                'h' => res += &condition.host,
-                'u' => res += &condition.user,
-                's' => res += utils::SHELL_NAME,
-                'n' => res.push('\n'),
-                'r' => res.push('\r'),
-                '\\' => res.push('\\'),
-                'V' | 'v' => res += env!("CARGO_PKG_VERSION"),
-
-                // Not supported.
-                'e' | 'j' | 'l' | 'w' | 'W' | '!' | '#' | '$' | 'D'
-                => {}
-
-                _ => {
-                    if is_buffering {
-                        buf.push(ch);
+            }
+            '$' => {
+                if let Some(ch) = chars.next() {
+                    if ch == '(' {
+                        let mut buf = String::new();
+                        while let Some(ch) = chars.next() {
+                            if ch == ')' {
+                                let (_, s) = shell.run_to_string(&buf);
+                                res += &s;
+                                buf = String::new();
+                                break;
+                            } else {
+                                buf.push(ch);
+                            }
+                        }
+                        if buf.len() > 0 {
+                            res += &buf;
+                        }
                     } else {
-                        res.push('\\');
+                        res.push('$');
                         res.push(ch);
                     }
+                } else {
+                    res.push('$');
                 }
             }
+            any => res.push(any),
         }
     }
 

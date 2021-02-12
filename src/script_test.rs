@@ -1,12 +1,5 @@
-use std::fs::File;
-use std::os::unix::io::FromRawFd;
-use std::io::Read;
-
 use crate::shell;
-use crate::process;
 use crate::variable::Value;
-
-use nix::unistd::{close, pipe};
 
 #[cfg(test)]
 fn equal_script(script: &str, expect: &str) {
@@ -18,21 +11,8 @@ fn equal_script(script: &str, expect: &str) {
 
     shell.scan_commands();
 
-    let (pipe_in, pipe_out) = pipe().expect("failed to create a pipe");
-
-    let status = shell.run_str_with_stdio(script, false, 0, pipe_out, 2);
-    assert_eq!(status, process::ExitStatus::ExitedWith(0));
-    close(pipe_out).ok();
-
-    let mut output = String::new();
-    unsafe {
-        let mut file = File::from_raw_fd(pipe_in);
-        file.read_to_string(&mut output).ok();
-    }
-
+    let (_, output) = shell.run_to_string(script);
     assert_eq!(output, expect);
-
-    close(pipe_in).ok();
 }
 
 #[test]
