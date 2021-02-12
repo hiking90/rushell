@@ -309,7 +309,7 @@ fn parse_ps1(shell: &mut shell::Shell, condition: &Condition) -> String {
     let ps1 = shell.get_str("PS1").unwrap_or(String::new());
     let mut res = String::new();
 
-    let mut chars = ps1.chars();
+    let mut chars = ps1.chars().peekable();
     while let Some(ch) = chars.next() {
         match ch {
             '\\' => {
@@ -338,12 +338,17 @@ fn parse_ps1(shell: &mut shell::Shell, condition: &Condition) -> String {
                         '[' => {
                             let mut buf = String::new();
                             while let Some(ch) = chars.next() {
-                                if ch == ']' {
-                                    res += &format!("\x01{}\x02", buf);
-                                    buf = String::new();
-                                    break;
-                                } else {
-                                    buf.push(ch);
+                                match chars.peek() {
+                                    Some(']') if ch == '\\' => {
+                                        chars.next();
+
+                                        if buf.len() > 0 {
+                                            res += &format!("\x01{}\x02", buf);
+                                            buf = String::new();
+                                        }
+                                        break;
+                                    }
+                                    _ => buf.push(ch),
                                 }
                             }
                             if buf.len() > 0 {      // If there is no ']', all buffered chars are append "res" as a normal char.
