@@ -1994,7 +1994,8 @@ fn test_debug() {
 
 //     assert_eq!(
 //         parser.parse(r#"
-// export PATH=$PATH:`pwd`/test
+// LUNCH_MENU_CHOICES=(${LUNCH_MENU_CHOICES[@]} aosp_arm aosp_arm64-eng)
+// echo ${LUNCH_MENU_CHOICES[@]}
 //         "#),
 //         Ok(Ast { terms: vec![] }),
 //     );

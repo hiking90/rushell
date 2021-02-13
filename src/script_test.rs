@@ -18,6 +18,16 @@ fn equal_script(script: &str, expect: &str) {
 #[test]
 fn test_completion() {
     equal_script(
+r##"
+unset LUNCH_MENU_CHOICES
+LUNCH_MENU_CHOICES=(${LUNCH_MENU_CHOICES[@]} aosp_arm aosp_arm64-eng)
+echo ${LUNCH_MENU_CHOICES[@]}
+"##,
+r##"aosp_arm aosp_arm64-eng
+"##,
+    );
+
+    equal_script(
 r##"# 2.2.1 Escape Character (Backslash)
 # The following must be quoted:
 printf '%s\n' \|\&\;\<\>\(\)\$\`\\\"\'

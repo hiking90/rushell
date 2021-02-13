@@ -337,16 +337,6 @@ fn run_case_command(
 ) -> Result<ExitStatus> {
     let word = expand_word_into_string(shell, word)?;
     // Find the exact match first.
-    // for case in cases {
-    //     for pattern in &case.patterns {
-    //         let pattern = expand_word_into_string(shell, pattern)?;
-    //         if pattern == word {
-    //             return Ok(run_terms(
-    //                 shell, &case.body, ctx.stdin, ctx.stdout, ctx.stderr,
-    //             ));
-    //         }
-    //     }
-    // }
     // If there is no exact matched pattern, find regular expression match.
     for case in cases {
         for pattern in &case.patterns {

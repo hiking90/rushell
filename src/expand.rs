@@ -249,7 +249,7 @@ fn expand_param(
                 std::process::exit(1);
             }
 
-            Ok(vec!["".to_owned()])
+            Ok(vec![])
         }
         ExpansionOp::GetOrAction(op, word) => {
             match op.as_str() {
@@ -616,9 +616,6 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
     trace!("expand_word: word={:?}, to={:?}", word, words);
     if words.is_empty() {
         Ok(vec![])
-        // Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal(
-        //     "".into(),
-        // )])])
     } else {
         Ok(words)
     }
@@ -647,10 +644,59 @@ pub fn expand_words(shell: &mut Shell, words: &[Word]) -> Result<Vec<String>> {
             }
         }
 
-        evaluated.push(ws.join(""));
+        if ws.len() > 0 {
+            evaluated.append(&mut ws);
+        }
     }
 
     Ok(evaluated)
+}
+
+#[test]
+fn test_expand_words() -> Result<()> {
+    use crate::parser::*;
+
+    let mut shell = shell::Shell::new();
+
+    shell.scan_commands();
+
+    let words = vec![
+        Word(vec![Span::Literal("export".into())]),
+        Word(vec![
+            Span::Literal("PATH=".into()),
+            Span::Parameter {
+                name: Box::new(Span::Literal("PATH".into())),
+                index: None,
+                op: ExpansionOp::GetOrEmpty,
+                quoted: false
+            },
+            Span::Literal(":".into()),
+            Span::Command {
+                body: vec![Term {
+                    code: "pwd".into(),
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::SimpleCommand {
+                            external: false,
+                            argv: vec![Word(vec![Span::Literal("pwd".into())])],
+                            redirects: vec![],
+                            assignments: vec![]
+                        }]
+                    }],
+                    background: false
+                }],
+                quoted: false
+            },
+            Span::Literal("/test".into())
+        ])
+    ];
+
+    assert_eq!(
+        expand_words(&mut shell, &words)?,
+        vec!["export".into(), format!("PATH=:{}/test", std::env::current_dir()?.display())],
+    );
+
+    Ok(())
 }
 
 /// Expands and merges all pattern words into a single pattern word.
