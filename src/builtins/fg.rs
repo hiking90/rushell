@@ -32,7 +32,7 @@ pub(super) fn parse_job_id(
                 return Err(ExitStatus::ExitedWith(1));
             }
         }
-        None => match ctx.shell.last_fore_job() {
+        None => match ctx.shell.last_stopped_job() {
             Some(job) => job.id(),
             None => {
                 writeln!(ctx.stderr, "rushell: no jobs to run").ok();

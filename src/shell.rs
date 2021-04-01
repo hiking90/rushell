@@ -63,7 +63,7 @@ pub struct Shell {
     cd_stack: Vec<PathBuf>,
 
     // TODO: Remove this field or make it private.
-    pub last_fore_job: Option<Arc<Job>>,
+    pub last_stopped_job: Option<Arc<Job>>,
 
     linefeed: Option<Arc<Interface<DefaultTerminal>>>,
     commands_scanner: completer::CommandScanner,
@@ -94,7 +94,7 @@ impl Shell {
             states: HashMap::new(),
             pid_job_mapping: HashMap::new(),
             cd_stack: Vec::new(),
-            last_fore_job: None,
+            last_stopped_job: None,
             last_back_job: None,
             linefeed: None,
             commands_scanner: completer::CommandScanner::new(),
@@ -438,8 +438,8 @@ impl Shell {
     }
 
     #[inline]
-    pub fn last_fore_job(&self) -> Option<Arc<Job>> {
-        self.last_fore_job.as_ref().cloned()
+    pub fn last_stopped_job(&self) -> Option<Arc<Job>> {
+        self.last_stopped_job.as_ref().cloned()
     }
 
     pub fn find_job_by_id(&self, id: JobId) -> Option<Arc<Job>> {

@@ -200,7 +200,6 @@ fn restore_terminal_attrs(termios: &Termios) {
 }
 
 pub fn run_in_foreground(shell: &mut Shell, job: &Arc<Job>, sigcont: bool) -> ProcessState {
-    shell.last_fore_job = Some(job.clone());
     shell.background_jobs_mut().remove(job);
     set_terminal_process_group(job.pgid);
 
@@ -250,9 +249,9 @@ pub fn destroy_job(shell: &mut Shell, job: &Arc<Job>) {
 
     shell.jobs_mut().remove(&job.id).unwrap();
 
-    if let Some(ref last_job) = shell.last_fore_job {
+    if let Some(ref last_job) = shell.last_stopped_job {
         if job.id == last_job.id {
-            shell.last_fore_job = None;
+            shell.last_stopped_job = None;
         }
     }
 }
@@ -294,6 +293,7 @@ pub fn wait_for_job(shell: &mut Shell, job: &Arc<Job>) -> ProcessState {
             state.unwrap()
         }
         Some(ProcessState::Stopped(_)) => {
+            shell.last_stopped_job = Some(job.clone());
             print_err!("[{}] Stopped: {}", job.id, job.cmd);
             state.unwrap()
         }
