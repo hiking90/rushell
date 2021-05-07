@@ -8,17 +8,26 @@ use crate::{utils, shell, variable, input, completion, eval};
 use std::borrow::Cow;
 use std::collections::{HashMap, BTreeMap, btree_map};
 use std::path::{Path, PathBuf, is_separator, MAIN_SEPARATOR};
-use std::fs;
-use std::io;
+use std::fs::{Metadata, FileType};
+use std::{io, fs};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use std::ffi::OsString;
+
+#[derive(Debug)]
+pub struct DirEntry {
+    pub path: PathBuf,
+    pub file_name: OsString,
+    pub metadata: Metadata,
+    pub file_type: FileType,
+}
 
 #[derive(Debug)]
 pub struct Folder {
     path: PathBuf,
     modified: SystemTime,
-    entries: Vec<Arc<fs::DirEntry>>,
+    entries: Vec<Arc<DirEntry>>,
 }
 
 impl Folder {
@@ -42,7 +51,13 @@ impl Folder {
         self.entries.clear();
 
         for entry in fs::read_dir(&self.path)? {
-            self.entries.push(Arc::new(entry?));
+            let entry = entry?;
+            self.entries.push(Arc::new(DirEntry {
+                path: entry.path(),
+                file_name: entry.file_name(),
+                metadata: entry.metadata()?,
+                file_type: entry.file_type()?,
+            }));
         }
 
         Ok(true)
@@ -176,9 +191,9 @@ impl ShellCompleter {
             if let Some(path) = to_path(path) {
                 if let Some(folder) = self.folder_scanner.lock().unwrap().scan(&path) {
                     let entries = folder.entries.iter()
-                        .filter(|entry| is_executable(entry) || entry.metadata().map_or(false, |meta| meta.is_dir()))
+                        .filter(|entry| is_executable(entry) || entry.metadata.is_dir())
                         // Drop Unix hidden file that is started with "."
-                        .filter(|entry| entry.file_name().to_str().map_or(false, |name| !name.starts_with(".")))
+                        .filter(|entry| entry.file_name.to_str().map_or(false, |name| !name.starts_with(".")))
                         .map(|entry| entry.clone())
                         .collect();
 
@@ -210,12 +225,11 @@ impl ShellCompleter {
         }
     }
 
-    fn folder_to_completion(&self, entries: &Vec<Arc<fs::DirEntry>>, base_dir: Option<&str>, fname: &str) -> Vec<linefeed::Completion> {
+    fn folder_to_completion(&self, entries: &Vec<Arc<DirEntry>>, base_dir: Option<&str>, fname: &str) -> Vec<linefeed::Completion> {
         let mut res = Vec::new();
 
         for entry in entries {
-            let ent_name = entry.file_name();
-            if let Ok(path) = ent_name.into_string() {
+            if let Ok(path) = entry.file_name.clone().into_string() {
                 if path.starts_with(fname) {
                     let (name, display) = if let Some(dir) = base_dir {
                         (format!("{}{}", dir, path), Some(path))
@@ -223,8 +237,7 @@ impl ShellCompleter {
                         (path, None)
                     };
 
-                    let is_dir = entry.metadata().ok()
-                        .map_or(false, |m| m.is_dir());
+                    let is_dir = entry.metadata.is_dir();
 
                     let suffix = if is_dir {
                         Suffix::Some(MAIN_SEPARATOR)
@@ -378,26 +391,19 @@ fn split_path(path: &str) -> (Option<&str>, &str) {
     }
 }
 
-fn is_executable(entry: &fs::DirEntry) -> bool {
-    if let Ok(file_type) = entry.file_type() {
-        if file_type.is_symlink() {
-            // follow symlink and check if it is executable.
-            if let Ok(path) = entry.path().canonicalize() {
-                if let Ok(meta) = path.metadata() {
-                    if (meta.permissions().mode() & 0o111) != 0 {
-                        return true;
-                    }
+fn is_executable(entry: &DirEntry) -> bool {
+    if entry.file_type.is_symlink() {
+        // follow symlink and check if it is executable.
+        if let Ok(path) = entry.path.canonicalize() {
+            if let Ok(meta) = path.metadata() {
+                if (meta.permissions().mode() & 0o111) != 0 {
+                    return true;
                 }
             }
         }
     }
 
-    match entry.metadata() {
-        Ok(meta) => {
-            meta.is_file() && (meta.permissions().mode() & 0o111) != 0
-        }
-        Err(_) => { false }
-    }
+    entry.metadata.is_file() && (entry.metadata.permissions().mode() & 0o111) != 0
 }
 
 fn to_path(path: &str) -> Option<PathBuf> {
@@ -410,7 +416,7 @@ fn to_path(path: &str) -> Option<PathBuf> {
 }
 
 pub enum CommandValue {
-    External(Arc<fs::DirEntry>),    // External command
+    External(Arc<DirEntry>),    // External command
     Builtin,                        // builtin command
     Alias,                          // User defined alias command
     Function,                       // User defined function
@@ -434,7 +440,7 @@ pub struct CommandMap {
     // Ex) alias ls="ls --color"
     // BTreeMap only keep alias name and remove the external information of "ls".
     // But, shell parser needs to get the external information to execute "ls --color" command.
-    external_commands: HashMap<String, Arc<fs::DirEntry>>,
+    external_commands: HashMap<String, Arc<DirEntry>>,
 }
 
 impl CommandMap {
@@ -444,7 +450,7 @@ impl CommandMap {
 
         for path in shell.path_folders().iter().rev() {
             for entry in path.entries.iter() {
-                if let Ok(filename) = entry.file_name().into_string() {
+                if let Ok(filename) = entry.file_name.clone().into_string() {
                     commands.insert(filename.to_owned(), CommandValue::External(Arc::clone(entry)));
                     external_commands.insert(filename, Arc::clone(entry));
                 }
@@ -491,7 +497,7 @@ impl CommandMap {
         self.commands.range(command.to_owned()..)
     }
 
-    pub fn get_external(&self, command: &str) -> Option<&Arc<fs::DirEntry>> {
+    pub fn get_external(&self, command: &str) -> Option<&Arc<DirEntry>> {
         self.external_commands.get(command)
     }
 }

@@ -365,7 +365,7 @@ pub fn run_external_command(
     } else {
         match shell.commands().get_external(&argv[0]) {
             Some(entry) => {
-                if let Some(path) = entry.path().to_str() {
+                if let Some(path) = entry.path.to_str() {
                     path.to_owned()
                 } else {
                     print_err!("Invalid UTF8 character `{}'", argv[0]);
