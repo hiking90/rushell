@@ -644,9 +644,10 @@ pub fn expand_words(shell: &mut Shell, words: &[Word]) -> Result<Vec<String>> {
             }
         }
 
-        if ws.len() > 0 {
-            evaluated.append(&mut ws);
+        if ws.len() == 0 {
+            ws.push("".to_string());
         }
+        evaluated.append(&mut ws);
     }
 
     Ok(evaluated)

@@ -151,7 +151,8 @@ pub fn evaluate_initializer(shell: &mut Shell, initializer: &Initializer) -> Res
     match initializer {
         Initializer::String(ref word) => Ok(Value::String(expand_word_into_string(shell, word)?)),
         Initializer::Array(ref words) => {
-            let elems = expand_words(shell, words)?;
+            let mut elems = expand_words(shell, words)?;
+            elems = elems.into_iter().filter(|e| e.len() > 0).collect();
             match (elems.len(), elems.get(0)) {
                 (1, Some(ref body)) if body.is_empty() => {
                     // Make `foo=()' an empty array.

@@ -273,7 +273,6 @@ mod tests {
         compare_glob("src/*.rs");
         compare_glob("**/*.rs");
         compare_glob("src/**/*.rs");
-        compare_glob("src/*.{rs,pest}");
         compare_glob("src/s*.?s");
         compare_glob("src/[[:alnum:]]*.[^p]?");     // "src/[[:alnum:]][^/]*\\.[^p]."
     }
