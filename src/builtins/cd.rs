@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("cd: argv={:?}", ctx.argv);
-    let old_dir = utils::current_working_dir();
+
+    let mut old_dir = ctx.shell.get_current_dir();
+
     let dir = match ctx.argv.get(1) {
         Some(dir) => {
             if dir.starts_with('/') {
@@ -17,13 +19,12 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
                     Some(dir) => dir,
                     None => return ExitStatus::ExitedWith(0),
                 }
+            } else if dir == ".." {
+                old_dir.pop();
+                old_dir
             } else {
                 // relative path
                 PathBuf::from(&old_dir).join(dir)
-                // Path::new(&old_dir)
-                //     .join(dir.clone())
-                //     .to_string_lossy()
-                //     .into_owned()
             }
         }
         None => {
@@ -32,8 +33,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         }
     };
 
-    // TODO: make this configurable
-    ctx.shell.pushd(old_dir);
+    ctx.shell.pushd(dir.clone());
 
     match ctx.shell.set_current_dir(Some(dir.clone())) {
         Ok(_) => {

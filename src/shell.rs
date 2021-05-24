@@ -211,6 +211,7 @@ impl Shell {
         frame.set(key, value.clone());
 
         if let Value::Function(ref _f) = value {
+            println!("function {}", key);
             if let Some(mut commands) = self.commands.take() {
                 commands.insert(key, completer::CommandValue::Function);
                 self.commands = Some(commands);
@@ -336,8 +337,15 @@ impl Shell {
         self.cd_stack.pop()
     }
 
+    pub fn get_current_dir(&self) -> PathBuf {
+        match self.get_str("PWD") {
+            Some(pwd) => PathBuf::from(pwd),
+            None => std::env::current_dir().unwrap_or(PathBuf::from("/"))
+        }
+    }
+
     pub fn set_current_dir(&mut self, dir: Option<PathBuf>) -> Result<()> {
-        let current = std::env::current_dir()?;
+        let current = self.get_current_dir();
         if let Some(dir) = current.to_str() {
             self.set("OLDPWD", Value::String(dir.into()), false);
         }

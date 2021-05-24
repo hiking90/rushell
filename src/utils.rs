@@ -46,9 +46,9 @@ pub fn home_dir() -> PathBuf {
     dirs::home_dir().unwrap_or(PathBuf::from("/"))
 }
 
-pub fn current_working_dir() -> PathBuf {
-    env::current_dir().unwrap_or(PathBuf::from("/"))
-}
+// pub fn current_working_dir() -> PathBuf {
+//     env::current_dir().unwrap_or(PathBuf::from("/"))
+// }
 
 pub fn var_os(env: &str, default: &str) -> String {
     if let Some(value) = env::var_os(env) {

@@ -200,7 +200,8 @@ fn main() -> io::Result<()> {
 
         let stdin = std::fs::File::create("/dev/tty").unwrap();
         shell.set_interactive(unistd::isatty(stdin.as_raw_fd()).unwrap() /* && opt.command.is_none() && opt.file.is_none() */);
-        shell.set_current_dir(None)?;
+        shell.set_current_dir(std::env::current_dir().ok())?;
+        // shell.set_current_dir(None)?;
 
         writeln!(shell, "\nWelcome to rushell {}", env!("CARGO_PKG_VERSION"))?;
     }

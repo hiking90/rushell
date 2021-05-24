@@ -62,7 +62,7 @@ impl PowerLine {
     }
 
     fn build(&mut self, _shell: &mut shell::Shell, condition: &Condition, theme: &theme::PromptTheme) -> String {
-        let mut cwd = utils::current_working_dir();
+        let mut cwd = _shell.get_current_dir();
         let mut git_style = None;
 
         let readonly = is_readonly(&cwd);
@@ -196,7 +196,7 @@ impl Prompt for Default {
     fn main(&mut self, _shell: &mut shell::Shell, condition: &Condition) -> String {
         let theme = theme::basic_theme();
 
-        let mut cwd = utils::current_working_dir();
+        let mut cwd = _shell.get_current_dir();
         let readonly = is_readonly(&cwd);
 
         if let Ok(strip_home) = cwd.strip_prefix(&utils::home_dir()) {
