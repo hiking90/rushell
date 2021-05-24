@@ -1105,7 +1105,7 @@ fn var_name<'a>() -> Parser<'a, char, String> {
 }
 
 fn initializer<'a>() -> Parser<'a, char, Initializer> {
-    (sym('(') * space() * (word(WordType::CmdWord) - space()).repeat(0..) - sym(')'))
+    (sym('(') * linebreak() * space() * (word(WordType::CmdWord) - linebreak() - space()).repeat(0..) - sym(')'))
     .map(|words| Initializer::Array(words))
 
     | word(WordType::CmdWord).map(|w| Initializer::String(w))
@@ -4105,10 +4105,10 @@ pub fn test_assignments() {
     );
 
     assert_eq!(
-        parser.parse("foo=('I wanna quit gym' 'holy moly' egg 'spam spam beans spam')"),
+        parser.parse("foo=(\n    'I wanna quit gym' 'holy moly'\negg \"spam spam beans spam\")"),
         Ok(Ast {
             terms: vec![Term {
-                code: "foo=('I wanna quit gym' 'holy moly' egg 'spam spam beans spam')".into(),
+                code: "foo=(\n    'I wanna quit gym' 'holy moly'\negg \"spam spam beans spam\")".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
