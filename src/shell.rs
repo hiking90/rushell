@@ -211,7 +211,6 @@ impl Shell {
         frame.set(key, value.clone());
 
         if let Value::Function(ref _f) = value {
-            println!("function {}", key);
             if let Some(mut commands) = self.commands.take() {
                 commands.insert(key, completer::CommandValue::Function);
                 self.commands = Some(commands);
