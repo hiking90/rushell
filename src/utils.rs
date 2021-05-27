@@ -26,6 +26,10 @@ impl FdFile {
     pub fn new(fd: RawFd) -> FdFile {
         FdFile { fd }
     }
+
+    pub fn fd(&self) -> RawFd {
+        self.fd
+    }
 }
 
 impl Write for FdFile {

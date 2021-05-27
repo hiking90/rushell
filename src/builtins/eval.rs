@@ -9,5 +9,5 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         program.push(' ');
     }
 
-    ctx.shell.run_str(&program, false)
+    ctx.shell.run_str_with_stdio(&program, false, ctx.stdin.fd(), ctx.stdout.fd(), ctx.stderr.fd())
 }
