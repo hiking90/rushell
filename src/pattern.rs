@@ -13,12 +13,14 @@ pub struct NoMatchesError;
 #[derive(Debug)]
 pub struct PatternWord {
     fragments: Vec<String>,
+    expand: bool,
 }
 
 impl PatternWord {
-    pub fn new(fragments: Vec<String>) -> PatternWord {
+    pub fn new(fragments: Vec<String>, expand: bool) -> PatternWord {
         PatternWord {
             fragments: fragments,
+            expand: expand,
         }
     }
 
@@ -49,13 +51,10 @@ impl PatternWord {
 
         let pattern = self.into_string();
 
-        // if glob::includes_glob(&pattern) {
-        //     if let Some(mut glob_paths) = glob::glob(&pattern) {
-        //         expanded_words.append(&mut glob_paths);
-        //     }
-        // }
-        if let Some(mut glob_paths) = glob::glob(&pattern) {
-            expanded_words.append(&mut glob_paths);
+        if self.expand == true {
+            if let Some(mut glob_paths) = glob::glob(&pattern) {
+                expanded_words.append(&mut glob_paths);
+            }
         }
         if expanded_words.is_empty() {
             expanded_words.push(pattern);
@@ -135,7 +134,7 @@ mod tests {
     #[test]
     fn literal_only() {
         let pat = PatternWord::new(
-            vec!["abc".to_owned()]
+            vec!["abc".to_owned()], true
         );
 
         assert_eq!(
@@ -167,7 +166,7 @@ mod tests {
     fn wildcard() {
         // "?"
         let pat = PatternWord::new(
-            vec!["?".to_owned()],
+            vec!["?".to_owned()], true
         );
 
         assert_eq!(pattern_word_match(&pat, "", true), None);
@@ -183,7 +182,7 @@ mod tests {
 
         // "*"
         let pat = PatternWord::new(
-            vec!["*".to_owned()],
+            vec!["*".to_owned()], true
         );
 
         assert_eq!(pattern_word_match(&pat, "", true), Some(MatchResult { start: 0, end: 0 }),);
@@ -200,7 +199,7 @@ mod tests {
 
         // "1?34"
         let pat = PatternWord::new(
-            vec!["1?34".to_owned()],
+            vec!["1?34".to_owned()], true
         );
 
         assert_eq!(
@@ -220,7 +219,7 @@ mod tests {
 
         // "1*4"
         let pat = PatternWord::new(
-            vec!["1*4".to_owned()],
+            vec!["1*4".to_owned()], true
         );
 
         assert_eq!(
@@ -233,7 +232,7 @@ mod tests {
     fn complex_pattern() {
         // "1?3*78*9"
         let pat = PatternWord::new(
-            vec!["1?3*78*9".to_owned()],
+            vec!["1?3*78*9".to_owned()], true
         );
 
         assert_eq!(
@@ -243,13 +242,13 @@ mod tests {
 
         assert_eq!(pattern_word_match(&pat, "12x3456789__", false), None);
 
-        let pat = PatternWord::new(vec!["*bash*".to_owned()]);
+        let pat = PatternWord::new(vec!["*bash*".to_owned()], true);
         assert_eq!(
             pattern_word_match(&pat, "COMMANDtarget/debug/rushell", false),
             None
         );
 
-        let pat = PatternWord::new(vec!["*".to_owned()]);
+        let pat = PatternWord::new(vec!["*".to_owned()], true);
         assert_eq!(
             pattern_word_match(&pat, "COMMANDtarget/debug/rushell", true),
             Some(MatchResult { start: 0, end: 27 })

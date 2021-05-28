@@ -64,6 +64,8 @@ printf '%s\n' "\$\`\"\\\
 test"
 # But not the following:
 printf '%s\n' "\|\&\;\<\>\(\)\'"
+A=a
+echo "[$A]"
 "##,
 
 r##"|&;<>()$`\"'
@@ -80,5 +82,6 @@ cmd 3: cmd 3
 cmd 4: cmd 4
 $`"\test
 \|\&\;\<\>\(\)\'
+[a]
 "##);
 }

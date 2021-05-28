@@ -208,7 +208,7 @@ fn expand_param(
                         let content = variable::value_as_str(&value).to_string();
                         let replaced =
                             crate::pattern::replace_pattern(
-                                &PatternWord::new(vec![pattern.to_string()]),
+                                &PatternWord::new(vec![pattern.to_string()], true),
                                 &content, replacement,
                                 op.unwrap_or(' ') == '/');
                         return Ok(vec![replaced]);
@@ -591,26 +591,26 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
         for frag in frags {
             if expand == true {
                 if !current_word.is_empty() {
-                    words.push(PatternWord::new(current_word));
+                    words.push(PatternWord::new(current_word, false));
                     current_word = Vec::new();
                 }
 
                 for word in frag.split(|c| ifs.contains(c)) {
-                    words.push(PatternWord::new(vec![word.to_string()]));
+                    words.push(PatternWord::new(vec![word.to_string()], true));
                 }
             } else {
                 current_word.push(frag);
             }
 
             if frags_len > 1 && !current_word.is_empty() {
-                words.push(PatternWord::new(current_word));
+                words.push(PatternWord::new(current_word, false));
                 current_word = Vec::new();
             }
         }
     }
 
     if !current_word.is_empty() {
-        words.push(PatternWord::new(current_word));
+        words.push(PatternWord::new(current_word, false));
     }
 
     trace!("expand_word: word={:?}, to={:?}", word, words);
@@ -710,7 +710,7 @@ pub fn expand_into_single_pattern_word(shell: &mut Shell, pattern: &Word) -> Res
         }
     }
 
-    Ok(PatternWord::new(frags))
+    Ok(PatternWord::new(frags, true))
 }
 
 // pub fn replace_pattern(
