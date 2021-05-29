@@ -33,6 +33,16 @@ And, if you want to use external prompt tool like starship, you can use PROMPT_C
 `PROMPT_COMMAND="startship prompt"`
  -->
 
+## Example init script
+This example requires "bat", "exa" and "zoxide" packages.
+<pre>
+export PATH=~/bin:~/.cargo/bin:/usr/local/bin:$PATH
+PROMPT_STYLE=power
+alias less=bat
+alias ls=exa
+eval "$(zoxide init posix --hook prompt)"
+</pre>
+
 ## Related Open Source
 `rushell` was started from nsh(https://github.com/nuta/nsh).
 And, it is heavily depend on forked linefeed(https://github.com/murarth/linefeed).
