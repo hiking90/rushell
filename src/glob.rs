@@ -19,8 +19,8 @@ fn match_char_span<'a>() -> Parser<'a, char, String> {
         | (one_of("!^") * none_of("]"))
         .map(|ch| format!("^{}", ch))
 
-        | none_of("]")
-        .map(|ch| ch.to_string())
+        // | none_of("]")
+        // .map(|ch| ch.to_string())
     ).repeat(0..)
     .map(|strs| format!("[{}]", strs.join("")))
 
