@@ -20,14 +20,14 @@ linefeed = { package="rushell_deps_linefeed", version = "0.6.0-jeff.1", git = "h
 dirs = "2"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_warn"] }
 pretty_env_logger = "0.4"
-structopt = "0"
-phf = { version = "0", features = ["macros"] }
+structopt = "0.3"
+phf = { version = "0.11", features = ["macros"] }
 lazy_static = "1"
-whoami = "0"
+whoami = "0.9"
 chrono = "0.4"
 # pom = { path = "../pom", version = "3"}
 pom = { package="rushell_deps_pom", version = "3.2.0-jeff.2", git = "https://github.com/hiking90/rushell_deps_pom.git" }
-err-derive = "0"
+err-derive = "0.3"
 signal-hook = "0.3"
 
 [dependencies.regex]
