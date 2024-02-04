@@ -122,7 +122,7 @@ impl Shell {
             if self.shell_pgid != tcgetpgrp(nix::libc::STDIN_FILENO).expect("failed to tcgetpgrp") {
                 set_terminal_process_group(self.shell_pgid);
             }
-            Some(tcgetattr(nix::libc::STDIN_FILENO).expect("failed to tcgetattr"))
+            Some(tcgetattr(std::io::stdin()).expect("failed to tcgetattr"))
         } else {
             None
         };

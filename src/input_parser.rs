@@ -1,5 +1,5 @@
 use pom::parser::*;
-use crate::parser::{space};
+use crate::parser::space;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {
@@ -10,7 +10,6 @@ pub enum Type {
     Redirect,
     Literal,
     // Path,
-    Keyword,
     Symbol,
     Variable,
     Quoted,

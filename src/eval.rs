@@ -354,7 +354,7 @@ fn run_case_command(
 }
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc};
+use std::sync::Arc;
 
 lazy_static! {
     pub static ref CTRLC: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
@@ -625,7 +625,7 @@ pub fn eval_completion_function(shell: &mut Shell, name: &str, line: &str, words
 }
 
 fn spawn_subshell(shell: &mut Shell, terms: &[parser::Term], ctx: &Context) -> Result<Pid> {
-    match fork().expect("failed to fork") {
+    match unsafe { fork() }.expect("failed to fork") {
         ForkResult::Parent { child } => Ok(child),
         ForkResult::Child => {
             let status = match run_terms(shell, terms, ctx.stdin, ctx.stdout, ctx.stderr) {

@@ -9,7 +9,7 @@ struct Opt {
     #[structopt(short = "f")]
     function: bool,
     #[structopt(short = "v")]
-    variable: bool,
+    _variable: bool,
     #[structopt(name = "NAME")]
     name: String,
 }

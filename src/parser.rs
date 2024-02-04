@@ -1128,7 +1128,7 @@ fn _compound_list<'a>() -> Parser<'a, char, Vec<Term>> {
     (term() + separator().opt())
     .map(|(mut terms, bg)| {
         if let Some(bg) = bg {
-            if let Some(mut last) = terms.last_mut() {
+            if let Some(last) = terms.last_mut() {
                 last.background = bg;
             }
         }

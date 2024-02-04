@@ -13,7 +13,7 @@ exclude = ["test", "backup"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nix = "0"
+nix = { version = "0", features = ["fs", "process", "signal", "term", "user"] }
 ansi_term = "0.11"
 # linefeed = { package="rushell_deps_linefeed", path = "../linefeed", version = "0.6"}
 linefeed = { package="rushell_deps_linefeed", version = "0.6.0-jeff.1", git = "https://github.com/hiking90/rushell_deps_linefeed.git" }

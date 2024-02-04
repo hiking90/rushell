@@ -13,14 +13,14 @@ pub struct NoMatchesError;
 #[derive(Debug)]
 pub struct PatternWord {
     fragments: Vec<String>,
-    expand: bool,
+    _expand: bool,
 }
 
 impl PatternWord {
     pub fn new(fragments: Vec<String>, expand: bool) -> PatternWord {
         PatternWord {
             fragments: fragments,
-            expand: expand,
+            _expand: expand,
         }
     }
 

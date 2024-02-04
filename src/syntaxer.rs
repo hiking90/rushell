@@ -64,7 +64,6 @@ impl syntaxer::Syntaxer for Syntaxer {
                     Type::Assignment |
                     Type::Redirect |
                     Type::Quoted |
-                    Type::Keyword |
                     Type::Symbol |
                     Type::Variable |
                     Type::Initializer |

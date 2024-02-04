@@ -196,7 +196,7 @@ pub fn set_terminal_process_group(pgid: Pid) {
 }
 
 fn restore_terminal_attrs(termios: &Termios) {
-    tcsetattr(0, TCSADRAIN, termios).expect("failed to tcsetattr");
+    tcsetattr(std::io::stdin(), TCSADRAIN, termios).expect("failed to tcsetattr");
 }
 
 pub fn run_in_foreground(shell: &mut Shell, job: &Arc<Job>, sigcont: bool) -> ProcessState {
@@ -217,7 +217,7 @@ pub fn run_in_foreground(shell: &mut Shell, job: &Arc<Job>, sigcont: bool) -> Pr
 
     // Save the current terminal status.
     job.termios.lock().unwrap()
-        .replace(tcgetattr(0).expect("failed to tcgetattr"));
+        .replace(tcgetattr(std::io::stdin()).expect("failed to tcgetattr"));
 
     // Go back into the shell.
     set_terminal_process_group(shell.shell_pgid);
@@ -322,7 +322,7 @@ pub fn wait_for_any_process(shell: &mut Shell, no_block: bool) -> Option<Pid> {
             (pid, ProcessState::Completed(-1))
         }
         Ok(WaitStatus::Stopped(pid, _signal)) => (pid, ProcessState::Stopped(pid)),
-        Err(nix::Error::Sys(nix::errno::Errno::ECHILD)) | Ok(WaitStatus::StillAlive) => {
+        Err(nix::errno::Errno::ECHILD) | Ok(WaitStatus::StillAlive) => {
             // No childs to be reported.
             return None;
         }
@@ -460,7 +460,7 @@ pub fn run_external_command(
     }
 
     // Spawn a child.
-    match fork().expect("failed to fork") {
+    match unsafe {fork()}.expect("failed to fork") {
         ForkResult::Parent { child } => {
             fds_close(fds);
             Ok(ExitStatus::Running(child))
@@ -548,11 +548,11 @@ fn shell_execv(shell: &mut Shell,
         Ok(_) => {
             unreachable!();
         }
-        Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
+        Err(nix::errno::Errno::EACCES) => {
             print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.", command);
             std::process::exit(1);
         }
-        Err(nix::Error::Sys(nix::errno::Errno::ENOEXEC)) => {
+        Err(nix::errno::Errno::ENOEXEC) => {
             let mut f = File::open(&command.to_str().unwrap()).unwrap();
             let mut sample = [0; 80];
 
@@ -588,7 +588,7 @@ fn shell_execv(shell: &mut Shell,
             };
         }
         Err(err) => {
-            let exit_code = if err == nix::Error::Sys(nix::errno::Errno::ENOENT) {
+            let exit_code = if err == nix::errno::Errno::ENOENT {
                 127
             } else {
                 126
